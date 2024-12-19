@@ -38,12 +38,12 @@ LLM.Ollama.Endpoint = "http://localhost:11434/api/chat"
 #
 #    LLM.Ollama.Model
 #        Description: Which Ollama model to use
-#        Default:     "llama3.2:1.7b"
+#        Default:     "llama3.2:3b"
 #        Note:        Only used when LLM.Provider = 1
 #                    Use "llama3.2:8b" for GPU servers
 #
 
-LLM.Ollama.Model = "llama3.2:1.7b"
+LLM.Ollama.Model = "llama3.2:3b"
 
 #
 #    LLM.LMStudio.Endpoint
