@@ -180,9 +180,9 @@ public:
             WorldPacket data(SMSG_MESSAGECHAT, 200);
             data << uint8(CHAT_MSG_SAY);          // Chat type
             data << uint32(LANG_UNIVERSAL);       // Language
-            data << uint64(player->GetGUID());    // Sender GUID
+            data << player->GetGUID().GetRawValue();    // Sender GUID
             data << uint32(0);                    // Chat flags
-            data << uint64(player->GetGUID());    // Sender GUID again
+            data << player->GetGUID().GetRawValue();    // Sender GUID again
             data << uint32(response.length() + 1);// Message length + 1
             data << response;                     // Message
             data << uint8(0);                     // Chat tag
