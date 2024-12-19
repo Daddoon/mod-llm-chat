@@ -194,7 +194,7 @@ public:
 };
 
 // Module registration
-void AddLLMChatScripts()
+void Addmod_llm_chatScripts()
 {
     new LLMChatModule();
 } 
