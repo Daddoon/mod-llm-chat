@@ -9,13 +9,19 @@ option(USE_OLLAMA "Enable Ollama integration" ON)
 
 # Find required packages
 find_package(CURL REQUIRED)
-find_package(nlohmann_json REQUIRED)  # If using JSON
+find_package(nlohmann_json REQUIRED)
+
+# Check for locale support
+include(CheckSymbolExists)
+check_symbol_exists(strtod_l "stdlib.h;locale.h" HAVE_STRTOD_L)
+if(NOT HAVE_STRTOD_L)
+    message(STATUS "strtod_l not found, using alternative locale handling")
+endif()
 
 # Define source files
 set(SOURCE_FILES
     src/mod_llm_chat.cpp
     src/ollama_client.cpp
-    # Add other source files here
 )
 
 # Define our main library target
@@ -67,13 +73,13 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
     ${CURL_LIBRARIES}
     nlohmann_json::nlohmann_json
-    # Add other required libraries here
 )
 
 # Set compile definitions
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
     USE_OLLAMA=$<BOOL:${USE_OLLAMA}>
+    $<$<BOOL:${HAVE_STRTOD_L}>:HAVE_STRTOD_L>
 )
 
 # Installation rules
