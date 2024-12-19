@@ -16,46 +16,13 @@ using acore::StringFormat;
 
 class LLMChatLogger {
 public:
-    static void Log(std::string const& message, uint8 logLevel = 2) {
-        if (!IsLogLevelEnabled(logLevel))
-            return;
-
-        // Get current timestamp
-        time_t now = time(nullptr);
-        char timestamp[32];
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-        std::string formattedMessage = StringFormat("[%s][LLMChat] %s", timestamp, message.c_str());
-
-        // Log to console if enabled
-        if (sConfigMgr->GetBoolDefault("ModLLMChat.LogToConsole", true)) {
-            LOG_INFO("server.loading", "%s", formattedMessage.c_str());
-        }
-
-        // Log to file if enabled
-        if (sConfigMgr->GetBoolDefault("ModLLMChat.LogToFile", true)) {
-            LogToFile(formattedMessage);
-        }
+    static void Log(std::string const& message) {
+        LOG_INFO("chat.ai", "%s", message.c_str());
     }
 
     static void LogChat(std::string const& playerName, std::string const& input, std::string const& response) {
-        Log(StringFormat("Player: %s, Input: %s", playerName.c_str(), input.c_str()), 2);
-        Log(StringFormat("AI Response: %s", response.c_str()), 2);
-    }
-
-private:
-    static bool IsLogLevelEnabled(uint8 level) {
-        return level <= sConfigMgr->GetIntDefault("ModLLMChat.LogLevel", 2);
-    }
-
-    static void LogToFile(std::string const& message) {
-        static std::string logPath = "logs/mod_llm_chat.log";
-        
-        std::ofstream logFile(logPath, std::ios::app);
-        if (logFile.is_open()) {
-            logFile << message << std::endl;
-            logFile.close();
-        }
+        LOG_INFO("chat.ai", "Player: %s, Input: %s", playerName.c_str(), input.c_str());
+        LOG_INFO("chat.ai", "AI Response: %s", response.c_str());
     }
 };
 
@@ -196,7 +163,7 @@ public:
 
         // Log the incoming message
         LLMChatLogger::Log(StringFormat("Received chat from %s: %s", 
-            player->GetName().c_str(), msg.c_str()), 3);
+            player->GetName().c_str(), msg.c_str()));
 
         // Get response from LLM
         std::string response = QueryLLM(msg);
