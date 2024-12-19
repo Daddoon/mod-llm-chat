@@ -1,18 +1,58 @@
+/*
+<--------------------------------------------------------------------------->
+- Developer(s): Your Name
+- Complete: 100%
+- ScriptName: 'LLM Chat'
+- Comment: AI Chat integration using Ollama
+<--------------------------------------------------------------------------->
+*/
+
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
 #include "Util.h"
+#include "Log.h"
 #include <curl/curl.h>
 #include <string>
 #include <regex>
 #include <nlohmann/json.hpp>
-#include "Log.h"
-#include <fstream>
-#include <ctime>
 
 using json = nlohmann::json;
-using Acore::StringFormat;
+
+/* VERSION */
+float ver = 1.0f;
+
+/* Config Variables */
+struct LLMConfig
+{
+    bool Enabled;
+    int Provider;
+    std::string OllamaEndpoint;
+    std::string OllamaModel;
+    float ChatRange;
+    std::string ResponsePrefix;
+};
+
+LLMConfig LLM_Config;
+
+class LLMChat_Config : public WorldScript
+{
+public: 
+    LLMChat_Config() : WorldScript("LLMChat_Config") { }
+    
+    void OnBeforeConfigLoad(bool reload) override
+    {
+        if (!reload) {
+            LLM_Config.Enabled = sConfigMgr->GetOption<bool>("LLM.Enable", false);
+            LLM_Config.Provider = sConfigMgr->GetOption<int>("LLM.Provider", 1);
+            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/chat");
+            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "yi:3b");
+            LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
+            LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
+        }
+    }
+};
 
 class LLMChatLogger {
 public:
@@ -193,8 +233,23 @@ public:
     }
 };
 
-// Module registration
-void Addmod_llm_chatScripts()
+class LLMChat_Announce : public PlayerScript
 {
+public:
+    LLMChat_Announce() : PlayerScript("LLMChat_Announce") { }
+
+    void OnLogin(Player* player) override
+    {
+        if (LLM_Config.Enabled)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module. Chat with AI using normal chat.");
+        }
+    }
+};
+
+void AddSC_LLMChatScripts()
+{
+    new LLMChat_Config();
     new LLMChatModule();
+    new LLMChat_Announce();
 } 

@@ -1,71 +1,70 @@
-#
-# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
-#
-
 [worldserver]
 
 ###################################################################################################
-#  LLM CHAT MODULE
-###################################################################################################
+# LLM CHAT SYSTEM
+#
+# These settings control the LLM Chat System
 #
 #    LLM.Enable
-#        Description: Enable the LLM chat module
-#        Default:     0 - Disabled
-#                    1 - Enabled
-#
+#        Description: Enables LLM Chat System
+#        Default:     True  - (Enabled)
+#                     False - (Disabled)
 
-LLM.Enable = 1
+LLM.Enable = true
 
 #
 #    LLM.Provider
 #        Description: Which LLM provider to use
-#        Default:     1
-#        Options:     1 - Ollama
-#                    2 - LM Studio
+#        1 - Ollama
+#        2 - LM Studio
+#        Default: 1 (Ollama)
 #
 
 LLM.Provider = 1
 
 #
 #    LLM.Ollama.Endpoint
-#        Description: URL endpoint for Ollama API
-#        Default:     "http://localhost:11435/api/chat"
-#        Note:        Only used when LLM.Provider = 1
+#        Description: Endpoint URL for Ollama API
+#        Default: "http://localhost:11435/api/chat"
 #
 
 LLM.Ollama.Endpoint = "http://localhost:11435/api/chat"
 
 #
 #    LLM.Ollama.Model
-#        Description: Which Ollama model to use
-#        Default:     "llama3.2:3b"
-#        Note:        Only used when LLM.Provider = 1
-#                    Use "llama3.2:8b" for GPU servers
+#        Description: Model to use with Ollama
+#        Default: "llama3.2:3b"
 #
 
 LLM.Ollama.Model = "llama3.2:3b"
 
 #
-#    LLM.LMStudio.Endpoint
-#        Description: URL endpoint for LM Studio API
-#        Default:     "http://localhost:8080/v1/chat/completions"
-#        Note:        Only used when LLM.Provider = 2
-#
-
-LLM.LMStudio.Endpoint = "http://localhost:8080/v1/chat/completions"
-
-#
 #    LLM.ChatRange
-#        Description: Range in yards for LLM chat responses to be heard
-#        Default:     25
+#        Description: Range in yards for AI chat responses to be visible
+#        Default: 25.0
 #
 
-LLM.ChatRange = 25
+LLM.ChatRange = 25.0
 
 #
 #    LLM.ResponsePrefix
-#        Description: Prefix to add before LLM responses
-#        Default:     "[AI] "
+#        Description: Prefix for AI responses in chat
+#        Default: "[AI] "
 #
 
 LLM.ResponsePrefix = "[AI] "
+
+#
+#    LLM.LogLevel
+#        Description: Level of logging detail
+#        0 - Disabled
+#        1 - Errors Only
+#        2 - Basic
+#        3 - Detailed
+#        Default: 2
+#
+
+LLM.LogLevel = 2
+
+#
+################################################################################################### 
