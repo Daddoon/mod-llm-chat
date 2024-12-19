@@ -1,14 +1,14 @@
-# Instead of failing immediately, you can make Ollama optional
-option(USE_OLLAMA "Enable Ollama integration" ON)
-
 # Define minimum CMake version
 cmake_minimum_required(VERSION 3.15)
 
 # Define the project
 project(mod_llm_chat)
 
-# Create the scripts target first
-add_custom_target(scripts)
+# Make Ollama optional
+option(USE_OLLAMA "Enable Ollama integration" ON)
+
+# Define our main library target
+add_library(${PROJECT_NAME} SHARED)
 
 function(setup_ollama)
     find_program(OLLAMA_EXECUTABLE ollama)
@@ -35,18 +35,22 @@ function(setup_ollama)
         ${CMAKE_CURRENT_BINARY_DIR}/ollama_config.json
         @ONLY
     )
+
+    # Add dependency to the main library
+    add_dependencies(${PROJECT_NAME} pull_ollama_model)
 endfunction()
-
-# Create library target
-add_library(${PROJECT_NAME} SHARED)
-
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    # Add your required libraries here
-)
 
 # Call setup_ollama
 setup_ollama()
 
-# Add dependencies
-add_dependencies(scripts pull_ollama_model) 
+# Set include directories if needed
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Set any compile definitions if needed
+target_compile_definitions(${PROJECT_NAME}
+    PRIVATE
+    USE_OLLAMA=$<BOOL:${USE_OLLAMA}>
+) 
