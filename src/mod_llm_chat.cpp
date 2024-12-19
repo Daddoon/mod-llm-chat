@@ -12,7 +12,7 @@
 #include <ctime>
 
 using json = nlohmann::json;
-using acore::StringFormat;
+using Acore::StringFormat;
 
 class LLMChatLogger {
 public:
