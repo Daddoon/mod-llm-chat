@@ -2,6 +2,7 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
+#include "Util.h"
 #include <curl/curl.h>
 #include <string>
 #include <regex>
@@ -11,6 +12,7 @@
 #include <ctime>
 
 using json = nlohmann::json;
+using acore::StringFormat;
 
 class LLMChatLogger {
 public:
