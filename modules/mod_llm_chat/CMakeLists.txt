@@ -7,8 +7,19 @@ project(mod_llm_chat)
 # Make Ollama optional
 option(USE_OLLAMA "Enable Ollama integration" ON)
 
+# Find required packages
+find_package(CURL REQUIRED)
+find_package(nlohmann_json REQUIRED)  # If using JSON
+
+# Define source files
+set(SOURCE_FILES
+    src/mod_llm_chat.cpp
+    src/ollama_client.cpp
+    # Add other source files here
+)
+
 # Define our main library target
-add_library(${PROJECT_NAME} SHARED)
+add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES})
 
 function(setup_ollama)
     find_program(OLLAMA_EXECUTABLE ollama)
@@ -43,14 +54,34 @@ endfunction()
 # Call setup_ollama
 setup_ollama()
 
-# Set include directories if needed
+# Set include directories
 target_include_directories(${PROJECT_NAME}
     PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CURL_INCLUDE_DIRS}
 )
 
-# Set any compile definitions if needed
+# Link libraries
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+    ${CURL_LIBRARIES}
+    nlohmann_json::nlohmann_json
+    # Add other required libraries here
+)
+
+# Set compile definitions
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
     USE_OLLAMA=$<BOOL:${USE_OLLAMA}>
+)
+
+# Installation rules
+install(TARGETS ${PROJECT_NAME}
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ollama_config.json
+    DESTINATION etc/${PROJECT_NAME}
 ) 
