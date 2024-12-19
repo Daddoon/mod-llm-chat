@@ -1,0 +1,71 @@
+#
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
+#
+
+[worldserver]
+
+###################################################################################################
+#  LLM CHAT MODULE
+###################################################################################################
+#
+#    LLM.Enable
+#        Description: Enable the LLM chat module
+#        Default:     0 - Disabled
+#                    1 - Enabled
+#
+
+LLM.Enable = 1
+
+#
+#    LLM.Provider
+#        Description: Which LLM provider to use
+#        Default:     1
+#        Options:     1 - Ollama
+#                    2 - LM Studio
+#
+
+LLM.Provider = 1
+
+#
+#    LLM.Ollama.Endpoint
+#        Description: URL endpoint for Ollama API
+#        Default:     "http://localhost:11434/api/chat"
+#        Note:        Only used when LLM.Provider = 1
+#
+
+LLM.Ollama.Endpoint = "http://localhost:11434/api/chat"
+
+#
+#    LLM.Ollama.Model
+#        Description: Which Ollama model to use
+#        Default:     "llama3.2:1.7b"
+#        Note:        Only used when LLM.Provider = 1
+#                    Use "llama3.2:8b" for GPU servers
+#
+
+LLM.Ollama.Model = "llama3.2:1.7b"
+
+#
+#    LLM.LMStudio.Endpoint
+#        Description: URL endpoint for LM Studio API
+#        Default:     "http://localhost:8080/v1/chat/completions"
+#        Note:        Only used when LLM.Provider = 2
+#
+
+LLM.LMStudio.Endpoint = "http://localhost:8080/v1/chat/completions"
+
+#
+#    LLM.ChatRange
+#        Description: Range in yards for LLM chat responses to be heard
+#        Default:     25
+#
+
+LLM.ChatRange = 25
+
+#
+#    LLM.ResponsePrefix
+#        Description: Prefix to add before LLM responses
+#        Default:     "[AI] "
+#
+
+LLM.ResponsePrefix = "[AI] "
