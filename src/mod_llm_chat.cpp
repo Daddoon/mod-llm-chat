@@ -46,8 +46,8 @@ public:
         if (!reload) {
             LLM_Config.Enabled = sConfigMgr->GetOption<bool>("LLM.Enable", false);
             LLM_Config.Provider = sConfigMgr->GetOption<int>("LLM.Provider", 1);
-            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/chat");
-            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "yi:3b");
+            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11435/api/chat");
+            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:3b");
             LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
             LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
         }
@@ -189,8 +189,8 @@ public:
     {
         enabled = sConfigMgr->GetOption<bool>("LLM.Enable", false);
         provider = sConfigMgr->GetOption<int>("LLM.Provider", 1);
-        ollamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/chat");
-        ollamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:1.7b");
+        ollamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11435/api/chat");
+        ollamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:3b");
         lmStudioEndpoint = sConfigMgr->GetOption<std::string>("LLM.LMStudio.Endpoint", "http://localhost:8080/v1/chat/completions");
         chatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
         responsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
@@ -202,11 +202,18 @@ public:
             return;
 
         // Log the incoming message
-        LLMChatLogger::Log(StringFormat("Received chat from %s: %s", 
-            player->GetName().c_str(), msg.c_str()));
+        std::ostringstream logStream;
+        logStream << "Received chat from " << player->GetName() << ": " << msg;
+        LLMChatLogger::Log(logStream.str());
 
         // Get response from LLM
         std::string response = QueryLLM(msg);
+
+
+        // Check for invalid or empty responses
+        if (response.empty() || response.find("Error") != std::string::npos) {
+            response = "[AI] Sorry, I couldn't process your message.";
+        }
 
         // Log the AI response
         LLMChatLogger::LogChat(player->GetName(), msg, response);
@@ -231,6 +238,7 @@ public:
             player->SendMessageToSetInRange(&data, chatRange, true);
         }
     }
+
 };
 
 class LLMChat_Announce : public PlayerScript
@@ -242,7 +250,7 @@ public:
     {
         if (LLM_Config.Enabled)
         {
-            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module. Chat with AI using normal chat.");
+            ChatHandler(player->GetSession()).SendSysMessage("This server is running the LLM Chat module. Chat with AI using normal chat.");
         }
     }
 };
