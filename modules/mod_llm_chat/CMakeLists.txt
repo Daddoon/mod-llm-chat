@@ -9,13 +9,12 @@ option(USE_OLLAMA "Enable Ollama integration" ON)
 
 # Find required packages
 find_package(CURL REQUIRED)
-find_package(nlohmann_json REQUIRED)
 
-# Check for locale support
-include(CheckSymbolExists)
-check_symbol_exists(strtod_l "stdlib.h;locale.h" HAVE_STRTOD_L)
-if(NOT HAVE_STRTOD_L)
-    message(STATUS "strtod_l not found, using alternative locale handling")
+# Check for xlocale.h (some systems need this for locale functions)
+include(CheckIncludeFile)
+check_include_file("xlocale.h" HAVE_XLOCALE_H)
+if(HAVE_XLOCALE_H)
+    add_definitions(-DHAVE_XLOCALE_H)
 endif()
 
 # Define source files
@@ -25,7 +24,7 @@ set(SOURCE_FILES
 )
 
 # Define our main library target
-add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES})
+add_library(${PROJECT_NAME} MODULE ${SOURCE_FILES})
 
 function(setup_ollama)
     find_program(OLLAMA_EXECUTABLE ollama)
@@ -72,14 +71,12 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     ${CURL_LIBRARIES}
-    nlohmann_json::nlohmann_json
 )
 
 # Set compile definitions
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
     USE_OLLAMA=$<BOOL:${USE_OLLAMA}>
-    $<$<BOOL:${HAVE_STRTOD_L}>:HAVE_STRTOD_L>
 )
 
 # Installation rules
