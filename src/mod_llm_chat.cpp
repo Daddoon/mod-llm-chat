@@ -11,6 +11,7 @@
 #include "World.h"
 #include "Channel.h"
 #include "Guild.h"
+#include "ChannelMgr.h"
 #include "mod_llm_chat.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -36,7 +37,7 @@ namespace {
         float ChatRange;
         std::string ResponsePrefix;
         int32 LogLevel;
-        // Add host and port for proper URL parsing
+        // URL parsing components
         std::string Host;
         std::string Port;
         std::string Target;
@@ -44,49 +45,58 @@ namespace {
 
     LLMConfig LLM_Config;
 
-    class LLMChat_Config : public WorldScript
+    // Helper function to parse URL
+    void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
     {
-    public:
-        LLMChat_Config() : WorldScript("LLMChat_Config") { }
-
-        void OnBeforeConfigLoad(bool /*reload*/) override
-        {
-            LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
-            LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
-            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
-            LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
-            LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
-            LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
-
-            // Log the loaded configuration
-            LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
-            LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
-            LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
-            LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
-            LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-            LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
-            LOG_INFO("module.llm_chat", "=== End Configuration ===\n");
-
-            // Parse endpoint URL
-            size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
-            if (protocolEnd != std::string::npos) {
-                std::string url = LLM_Config.OllamaEndpoint.substr(protocolEnd + 3);
-                size_t pathStart = url.find('/');
-                std::string hostPort = url.substr(0, pathStart);
-                LLM_Config.Target = url.substr(pathStart);
-
-                size_t portStart = hostPort.find(':');
-                if (portStart != std::string::npos) {
-                    LLM_Config.Host = hostPort.substr(0, portStart);
-                    LLM_Config.Port = hostPort.substr(portStart + 1);
-                } else {
-                    LLM_Config.Host = hostPort;
-                    LLM_Config.Port = "80";
-                }
+        try {
+            size_t protocolEnd = endpoint.find("://");
+            if (protocolEnd == std::string::npos) {
+                LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no protocol): %s", endpoint.c_str());
+                return;
             }
+
+            std::string url = endpoint.substr(protocolEnd + 3);
+            size_t pathStart = url.find('/');
+            if (pathStart == std::string::npos) {
+                LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no path): %s", endpoint.c_str());
+                return;
+            }
+
+            std::string hostPort = url.substr(0, pathStart);
+            config.Target = url.substr(pathStart);
+
+            size_t portStart = hostPort.find(':');
+            if (portStart != std::string::npos) {
+                config.Host = hostPort.substr(0, portStart);
+                config.Port = hostPort.substr(portStart + 1);
+                
+                // Validate port
+                try {
+                    int port = std::stoi(config.Port);
+                    if (port <= 0 || port > 65535) {
+                        LOG_ERROR("module.llm_chat", "Invalid port number: %s", config.Port.c_str());
+                        config.Port = "11434"; // Default to Ollama port
+                    }
+                } catch (std::exception const& e) {
+                    LOG_ERROR("module.llm_chat", "Invalid port format: %s", e.what());
+                    config.Port = "11434"; // Default to Ollama port
+                }
+            } else {
+                config.Host = hostPort;
+                config.Port = "11434"; // Default to Ollama port
+            }
+
+            LOG_INFO("module.llm_chat", "URL parsed successfully - Host: %s, Port: %s, Target: %s", 
+                    config.Host.c_str(), config.Port.c_str(), config.Target.c_str());
         }
-    };
+        catch (std::exception const& e) {
+            LOG_ERROR("module.llm_chat", "Error parsing URL: %s", e.what());
+            // Set defaults
+            config.Host = "localhost";
+            config.Port = "11434";
+            config.Target = "/api/generate";
+        }
+    }
 
     class LLMChatLogger {
     public:
@@ -117,6 +127,22 @@ namespace {
             if (!LLM_Config.Enabled)
             {
                 LOG_INFO("module.llm_chat", "Module is disabled");
+                return;
+            }
+
+            // Check if this is a chat type we want to handle
+            bool validChatType = (type == CHAT_MSG_SAY || 
+                                type == CHAT_MSG_YELL || 
+                                type == CHAT_MSG_PARTY || 
+                                type == CHAT_MSG_PARTY_LEADER || 
+                                type == CHAT_MSG_GUILD || 
+                                type == CHAT_MSG_OFFICER || 
+                                type == CHAT_MSG_WHISPER || 
+                                type == CHAT_MSG_CHANNEL);
+
+            if (!validChatType)
+            {
+                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
                 return;
             }
 
@@ -258,24 +284,38 @@ namespace {
                         // Channel chat - respond in the same channel
                         if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeam()))
                         {
-                            // Get the channel name from the message
-                            std::string channelName = "Trade"; // Default to trade
-                            if (Channel* chn = cMgr->GetChannel(channelName, player))
+                            // Extract channel name from the message
+                            std::string channelName;
+                            if (Channel* channel = player->GetChannel())
                             {
-                                WorldPacket data(SMSG_MESSAGECHAT, 200);
-                                data << uint8(CHAT_MSG_CHANNEL);
-                                data << uint32(LANG_UNIVERSAL);
-                                ObjectGuid guid = player->GetGUID();
-                                data << guid;
-                                data << uint32(0);
-                                data << channelName.c_str();  // Channel name
-                                data << guid;
-                                data << uint32(response.length() + 1);
-                                data << response;
-                                data << uint8(0);
+                                channelName = channel->GetName();
+                                LOG_INFO("module.llm_chat", "Found channel: %s", channelName.c_str());
 
-                                chn->SendToAll(&data);
-                                LLMChatLogger::Log(2, "Sent channel response to " + channelName);
+                                if (Channel* chn = cMgr->GetChannel(channelName, player))
+                                {
+                                    WorldPacket data(SMSG_MESSAGECHAT, 200);
+                                    data << uint8(CHAT_MSG_CHANNEL);
+                                    data << uint32(LANG_UNIVERSAL);
+                                    ObjectGuid guid = player->GetGUID();
+                                    data << guid;
+                                    data << uint32(0);
+                                    data << channelName.c_str();  // Channel name
+                                    data << guid;
+                                    data << uint32(response.length() + 1);
+                                    data << response;
+                                    data << uint8(0);
+
+                                    chn->SendToAll(&data);
+                                    LOG_INFO("module.llm_chat", "Sent channel response to %s", channelName.c_str());
+                                }
+                                else
+                                {
+                                    LOG_ERROR("module.llm_chat", "Could not find channel: %s", channelName.c_str());
+                                }
+                            }
+                            else
+                            {
+                                LOG_ERROR("module.llm_chat", "Could not get player's current channel");
                             }
                         }
                         break;
@@ -455,23 +495,20 @@ public:
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
 
-        // Parse endpoint URL
-        size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
-        if (protocolEnd != std::string::npos) {
-            std::string url = LLM_Config.OllamaEndpoint.substr(protocolEnd + 3);
-            size_t pathStart = url.find('/');
-            std::string hostPort = url.substr(0, pathStart);
-            LLM_Config.Target = url.substr(pathStart);
+        // Parse the endpoint URL
+        ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
 
-            size_t portStart = hostPort.find(':');
-            if (portStart != std::string::npos) {
-                LLM_Config.Host = hostPort.substr(0, portStart);
-                LLM_Config.Port = hostPort.substr(portStart + 1);
-            } else {
-                LLM_Config.Host = hostPort;
-                LLM_Config.Port = "80";
-            }
-        }
+        // Log the loaded configuration
+        LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
+        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
+        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
+        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
+        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
+        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
+        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
+        LOG_INFO("module.llm_chat", "=== End Configuration ===\n");
     }
 };
 
