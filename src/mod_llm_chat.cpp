@@ -12,8 +12,13 @@
 #include "Log.h"
 #include <nlohmann/json.hpp>
 #include <curl/curl.h>
+#include <cpprest/http_client.h>
+#include <cpprest/json.h>
 
 using json = nlohmann::json;
+using namespace web; // Common features like URIs and JSON
+using namespace web::http; // Common HTTP functionality
+using namespace web::http::client; // HTTP client features
 
 /* VERSION */
 float ver = 1.0f;
@@ -102,53 +107,30 @@ public:
 private:
     std::string QueryLLM(const std::string& message)
     {
-        CURL* curl = curl_easy_init();
-        if (!curl) {
-            return "Error initializing CURL";
-        }
+        // Create an HTTP client
+        http_client client(LLM_Config.OllamaEndpoint);
 
-        std::string response;
-        std::string jsonPayload = json({
-            {"model", LLM_Config.OllamaModel},
-            {"messages", json::array({
-                {
-                    {"role", "user"},
-                    {"content", message}
+        // Create a JSON object for the request
+        json::value requestData;
+        requestData[U("model")] = json::value::string(LLM_Config.OllamaModel);
+        requestData[U("messages")] = json::value::array();
+        requestData[U("messages")][0][U("role")] = json::value::string(U("user"));
+        requestData[U("messages")][0][U("content")] = json::value::string(message);
+
+        // Send the request
+        client.request(methods::POST, U(""), requestData.serialize(), U("application/json"))
+            .then([](http_response response) {
+                if (response.status_code() == status_codes::OK) {
+                    return response.extract_json();
                 }
-            })}
-        }).dump();
+                throw std::runtime_error("Error: " + std::to_string(response.status_code()));
+            })
+            .then([this](json::value jsonResponse) {
+                return ParseLLMResponse(jsonResponse);
+            })
+            .wait(); // Wait for the response
 
-        curl_easy_setopt(curl, CURLOPT_URL, LLM_Config.OllamaEndpoint.c_str());
-        curl_easy_setopt(curl, CURLOPT_POST, 1L);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonPayload.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        
-        struct curl_slist* headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-        CURLcode res = curl_easy_perform(curl);
-        
-        if (res != CURLE_OK) {
-            std::string errorMsg = curl_easy_strerror(res);
-            LOG_ERROR("server.loading", "LLM Chat Module: CURL error: {}", errorMsg);
-            curl_slist_free_all(headers);
-            curl_easy_cleanup(curl);
-            return "Error communicating with LLM service: " + errorMsg;
-        }
-
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-
-        // Parse the response
-        return ParseLLMResponse(response);
-    }
-
-    static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp)
-    {
-        userp->append((char*)contents, size * nmemb);
-        return size * nmemb;
+        return "Response received"; // Placeholder, handle the actual response
     }
 
     std::string ParseLLMResponse(const std::string& rawResponse)
