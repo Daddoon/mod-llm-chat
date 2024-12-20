@@ -1,4 +1,4 @@
-#include "mod_llm_chat.h"
+void Add_LLMChatScripts();
 
 void Addmod_llm_chatScripts()
 {
