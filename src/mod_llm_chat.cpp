@@ -130,67 +130,23 @@ namespace {
             {
                 response = LLM_Config.ResponsePrefix + response;
                 
-                // Send response based on chat type
-                switch (type)
-                {
-                    case CHAT_MSG_SAY:
-                    {
-                        // Create a new WorldPacket for the response
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_MONSTER_SAY);
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;
-                        data << uint32(0);                      // Flags
-                        data << guid;                           // Target GUID
-                        data << uint32(response.length() + 1);  // Message length
-                        data << response;                       // Message
-                        data << uint8(0);                       // Chat Tag
+                // Use a more visible method for all chat types
+                WorldPacket data(SMSG_MESSAGECHAT, 200);
+                data << uint8(CHAT_MSG_RAID_BOSS_EMOTE);  // More visible chat type
+                data << uint32(LANG_UNIVERSAL);
+                ObjectGuid guid = player->GetGUID();
+                data << guid;
+                data << uint32(0);                      // Flags
+                data << guid;                           // Target GUID
+                data << uint32(response.length() + 1);  // Message length
+                data << response;                       // Message
+                data << uint8(0);                       // Chat Tag
 
-                        // Send to all players in range
-                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange, true);
-                        break;
-                    }
-                    case CHAT_MSG_YELL:
-                    {
-                        // Similar to SAY but with larger range
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_MONSTER_YELL);
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;
-                        data << uint32(0);
-                        data << guid;
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);
-
-                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
-                        break;
-                    }
-                    case CHAT_MSG_CHANNEL:
-                    {
-                        // For channels, use system message instead
-                        ChatHandler(player->GetSession()).PSendSysMessage("%s", response.c_str());
-                        break;
-                    }
-                    case CHAT_MSG_WHISPER:
-                    {
-                        // Direct whisper back to the player
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_WHISPER);
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;
-                        data << uint32(0);
-                        data << guid;
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);
-                        player->GetSession()->SendPacket(&data);
-                        break;
-                    }
-                }
+                // Send to all nearby players
+                player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
+                
+                // Also send as system message to ensure visibility
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FFFF%s|r", response.c_str());
                 
                 // Log the interaction
                 LLMChatLogger::LogChat(player->GetName(), msg, response);

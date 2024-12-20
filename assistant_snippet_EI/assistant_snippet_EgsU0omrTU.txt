@@ -1,0 +1,3 @@
+OLLAMA_HOST=0.0.0.0:11435 ollama serve 
+
+cp conf/mod_llm_chat.conf.dist /path/to/your/azerothcore/etc/mod_llm_chat.conf 
