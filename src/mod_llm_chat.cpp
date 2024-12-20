@@ -98,9 +98,31 @@ namespace {
     public:
         LLMChatModule() : PlayerScript("LLMChatModule") {}
 
-        void OnChat(Player* player, uint32 /*type*/, uint32 /*lang*/, std::string& msg) override
+        void OnSay(Player* player, uint32 /*type*/, uint32 lang, std::string& msg) override
         {
+            HandleChat(player, CHAT_MSG_SAY, lang, msg);
+        }
+
+        void OnYell(Player* player, uint32 /*type*/, uint32 lang, std::string& msg) override
+        {
+            HandleChat(player, CHAT_MSG_YELL, lang, msg);
+        }
+
+        void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
+        {
+            HandleChat(player, type, lang, msg);
+        }
+
+    private:
+        void HandleChat(Player* player, uint32 type, uint32 lang, std::string& msg)
+        {
+            // Only process certain chat types
             if (!LLM_Config.Enabled || !player || msg.empty())
+                return;
+
+            // Check if this is a chat type we want to respond to
+            if (type != CHAT_MSG_SAY && type != CHAT_MSG_YELL && 
+                type != CHAT_MSG_CHANNEL && type != CHAT_MSG_WHISPER)
                 return;
 
             // Log the incoming message
@@ -118,20 +140,42 @@ namespace {
             if (!response.empty())
             {
                 response = LLM_Config.ResponsePrefix + response;
-                ChatHandler(player->GetSession()).PSendSysMessage("%s", response.c_str());
+                
+                // Send response based on chat type
+                switch (type)
+                {
+                    case CHAT_MSG_SAY:
+                    case CHAT_MSG_YELL:
+                        {
+                            // Send to nearby players
+                            Map* map = player->GetMap();
+                            if (map && map->IsDungeon())
+                            {
+                                map->MonsterSay(response.c_str(), LANG_UNIVERSAL, player);
+                            }
+                            else
+                            {
+                                player->MonsterSay(response.c_str(), LANG_UNIVERSAL, nullptr);
+                            }
+                        }
+                        break;
+                    case CHAT_MSG_CHANNEL:
+                    case CHAT_MSG_WHISPER:
+                        ChatHandler(player->GetSession()).PSendSysMessage("%s", response.c_str());
+                        break;
+                }
                 
                 // Log the interaction
                 LLMChatLogger::LogChat(player->GetName(), msg, response);
             }
         }
 
-    private:
         std::string ParseLLMResponse(std::string const& rawResponse)
         {
             try {
                 json response = json::parse(rawResponse);
-                if (response.contains("message") && response["message"].contains("content")) {
-                    return response["message"]["content"];
+                if (response.contains("response")) {
+                    return response["response"];
                 }
                 return "Error parsing LLM response";
             }
@@ -146,12 +190,8 @@ namespace {
             try {
                 std::string jsonPayload = json({
                     {"model", LLM_Config.OllamaModel},
-                    {"messages", json::array({
-                        {
-                            {"role", "user"},
-                            {"content", message}
-                        }
-                    })}
+                    {"prompt", message},
+                    {"stream", false}
                 }).dump();
 
                 // Set up the IO context

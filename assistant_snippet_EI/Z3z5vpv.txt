@@ -1,0 +1,1 @@
+1|cp conf/mod_llm_chat.conf.dist /path/to/your/azerothcore/etc/mod_llm_chat.conf 

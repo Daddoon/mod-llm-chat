@@ -25,10 +25,10 @@ LLM.Provider = 1
 #
 #    LLM.Ollama.Endpoint
 #        Description: Endpoint URL for Ollama API
-#        Default: "http://localhost:11435/api/chat"
+#        Default: "http://localhost:11435/api/generate"
 #
 
-LLM.Ollama.Endpoint = "http://localhost:11435/api/chat"
+LLM.Ollama.Endpoint = "http://localhost:11435/api/generate"
 
 #
 #    LLM.Ollama.Model
