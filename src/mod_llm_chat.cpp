@@ -27,7 +27,7 @@ using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
 // Forward declarations
-void SendAIResponse(Player* sender, const std::string& msg, int team);
+void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType);
 
 namespace {
     /* Config Variables */
@@ -106,31 +106,51 @@ std::string ParseLLMResponse(std::string const& rawResponse)
 {
     try {
         LOG_INFO("module.llm_chat", "%s", "Parsing API Response...");
-        json response = json::parse(rawResponse);
         
-        // Check if this is a streaming response
-        if (response.contains("done")) {
-            LOG_INFO("module.llm_chat", "%s", "Found streaming response");
-            // This is a streaming response
-            if (response["done"].get<bool>()) {
-                // This is the final response in the stream
-                std::string result = response["response"].get<std::string>();
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final stream response: %s", result.c_str()).c_str());
-                return result;
+        // Split response by newlines in case of streaming
+        std::string finalResponse;
+        std::istringstream stream(rawResponse);
+        std::string line;
+        
+        while (std::getline(stream, line)) {
+            if (line.empty()) continue;
+            
+            try {
+                json responseObj = json::parse(line);
+                
+                // Extract response text
+                if (responseObj.contains("response")) {
+                    std::string responseText = responseObj["response"].get<std::string>();
+                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Got response part: %s", responseText.c_str()).c_str());
+                    finalResponse += responseText;
+                }
+                
+                // If this is the final message in a stream
+                if (responseObj.contains("done") && responseObj["done"].get<bool>()) {
+                    LOG_INFO("module.llm_chat", "%s", "Found end of stream");
+                    break;
+                }
             }
-            LOG_INFO("module.llm_chat", "%s", "Partial stream response - ignoring");
-            // This is a partial response, ignore it
-            return "";
+            catch (json::parse_error const& e) {
+                LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Failed to parse line: %s", line.c_str()).c_str());
+                continue;
+            }
         }
         
-        // Non-streaming response
-        if (response.contains("response")) {
-            std::string aiResponse = response["response"].get<std::string>();
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Non-streaming response: %s", aiResponse.c_str()).c_str());
-            return aiResponse;
+        if (!finalResponse.empty()) {
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final combined response: %s", finalResponse.c_str()).c_str());
+            return finalResponse;
         }
         
-        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Response missing 'response' field: %s", rawResponse.c_str()).c_str());
+        // Fallback: try parsing as single response
+        json singleResponse = json::parse(rawResponse);
+        if (singleResponse.contains("response")) {
+            std::string response = singleResponse["response"].get<std::string>();
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Single response: %s", response.c_str()).c_str());
+            return response;
+        }
+        
+        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("No valid response found in: %s", rawResponse.c_str()).c_str());
         return "Error parsing LLM response";
     }
     catch (json::parse_error const& e) {
@@ -147,6 +167,7 @@ std::string QueryLLM(std::string const& message)
             {"model", LLM_Config.OllamaModel},
             {"prompt", message},
             {"stream", false},  // Explicitly disable streaming
+            {"raw", false},     // Disable raw mode
             {"options", {
                 {"temperature", 0.7},    // Add some randomness to responses
                 {"num_predict", 100},    // Limit response length
@@ -244,79 +265,60 @@ public:
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
     {
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Starting OnChat handler").c_str());
+        LOG_INFO("module.llm_chat", "%s", "=== New Chat Event ===");
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Player: %s", player->GetName().c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Raw Message: '%s'", msg.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Chat Type: %u", type).c_str());
+
+        // Convert chat type to string for better logging
+        std::string chatTypeName;
+        switch (type)
+        {
+            case CHAT_MSG_SAY: chatTypeName = "Say"; break;
+            case CHAT_MSG_YELL: chatTypeName = "Yell"; break;
+            case CHAT_MSG_PARTY: chatTypeName = "Party"; break;
+            case CHAT_MSG_PARTY_LEADER: chatTypeName = "Party Leader"; break;
+            case CHAT_MSG_GUILD: chatTypeName = "Guild"; break;
+            case CHAT_MSG_OFFICER: chatTypeName = "Officer"; break;
+            case CHAT_MSG_RAID: chatTypeName = "Raid"; break;
+            case CHAT_MSG_RAID_LEADER: chatTypeName = "Raid Leader"; break;
+            case CHAT_MSG_RAID_WARNING: chatTypeName = "Raid Warning"; break;
+            case CHAT_MSG_BATTLEGROUND: chatTypeName = "Battleground"; break;
+            case CHAT_MSG_BATTLEGROUND_LEADER: chatTypeName = "Battleground Leader"; break;
+            case CHAT_MSG_CHANNEL: chatTypeName = "Channel"; break;
+            case CHAT_MSG_WHISPER: chatTypeName = "Whisper"; break;
+            default: chatTypeName = "Unknown"; break;
+        }
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Chat Type Name: %s", chatTypeName.c_str()).c_str());
         
         if (!LLM_Config.Enabled)
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Module is disabled");
+            LOG_INFO("module.llm_chat", "%s", "Module is disabled - ignoring message");
             return;
         }
 
         if (!player)
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: No player object");
+            LOG_INFO("module.llm_chat", "%s", "No player object - ignoring message");
             return;
         }
 
         if (msg.empty())
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Empty message");
+            LOG_INFO("module.llm_chat", "%s", "Empty message - ignoring");
             return;
         }
 
         // Ignore if player is a bot or not a real player
         if (!player->GetSession() || player->GetSession()->IsBot())
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Bot or invalid session");
+            LOG_INFO("module.llm_chat", "%s", "Bot or invalid session - ignoring message");
             return;
         }
 
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Processing message from %s: '%s'", 
-            player->GetName().c_str(), msg.c_str()).c_str());
-
-        switch (type)
-        {
-            case CHAT_MSG_SAY:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing SAY message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_YELL:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing YELL message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing PARTY message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_GUILD:
-            case CHAT_MSG_OFFICER:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing GUILD message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_RAID:
-            case CHAT_MSG_RAID_LEADER:
-            case CHAT_MSG_RAID_WARNING:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing RAID message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_BATTLEGROUND:
-            case CHAT_MSG_BATTLEGROUND_LEADER:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing BG message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_CHANNEL:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing CHANNEL message");
-                SendAIResponse(player, msg, -1);
-                break;
-            case CHAT_MSG_WHISPER:
-                LOG_INFO("module.llm_chat", "%s", "DEBUG: Processing WHISPER message");
-                SendAIResponse(player, msg, player->GetTeamId());
-                break;
-            default:
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Ignoring message type %u", type).c_str());
-                break;
-        }
+        // Pass the original chat type to SendAIResponse
+        SendAIResponse(player, msg, -1, type);
+        LOG_INFO("module.llm_chat", "%s", "=== End Chat Event ===\n");
     }
 };
 
@@ -367,76 +369,118 @@ public:
     }
 };
 
-void SendAIResponse(Player* sender, const std::string& msg, int team)
+void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
 {
-    LOG_INFO("module.llm_chat", "%s", "DEBUG: Starting SendAIResponse");
+    LOG_INFO("module.llm_chat", "%s", "=== Starting AI Response ===");
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sender: %s", sender->GetName().c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Original Message: '%s'", msg.c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Team: %d", team).c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Original Chat Type: %u", originalChatType).c_str());
 
     if (!LLM_Config.Enabled)
     {
-        LOG_INFO("module.llm_chat", "%s", "DEBUG: Module is disabled in SendAIResponse");
+        LOG_INFO("module.llm_chat", "%s", "Module is disabled - aborting response");
         ChatHandler(sender->GetSession()).PSendSysMessage("LLM Chat is disabled.");
         return;
     }
 
     if (!sender->CanSpeak())
     {
-        LOG_INFO("module.llm_chat", "%s", "DEBUG: Player cannot speak");
+        LOG_INFO("module.llm_chat", "%s", "Player cannot speak - aborting response");
         ChatHandler(sender->GetSession()).PSendSysMessage("You can't use LLM Chat while muted!");
         return;
     }
 
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Querying LLM with message: %s", msg.c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", "Querying LLM API...");
     std::string response = QueryLLM(msg);
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Got LLM response: %s", response.c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Raw LLM Response: '%s'", response.c_str()).c_str());
 
     if (response.empty() || response.find("Error") != std::string::npos)
     {
-        LOG_INFO("module.llm_chat", "%s", "DEBUG: Empty or error response");
+        LOG_INFO("module.llm_chat", "%s", "Empty or error response - using fallback message");
         response = "Sorry, I couldn't process your message.";
     }
 
     response = LLM_Config.ResponsePrefix + response;
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Final response with prefix: %s", response.c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final Response: '%s'", response.c_str()).c_str());
 
-    LOG_INFO("module.llm_chat", "%s", "DEBUG: Broadcasting response to eligible players");
+    // Use the original chat type for the response
+    uint32 responseType = originalChatType;
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Using chat type: %u for response", responseType).c_str());
+
+    LOG_INFO("module.llm_chat", "%s", "Broadcasting response to eligible players");
     SessionMap sessions = sWorld->GetAllSessions();
     for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
     {
         if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Skipping invalid session");
             continue;
         }
 
         Player* target = itr->second->GetPlayer();
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Checking player: %s", target->GetName().c_str()).c_str());
 
         // Check team if specified
         if (team != -1 && target->GetTeamId() != team)
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Skipping player of wrong team");
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Skipping %s - wrong team", target->GetName().c_str()).c_str());
             continue;
         }
 
         // Check range for local chat types
-        if ((msg.find("/s") == 0 || msg.find("/y") == 0) && 
+        if ((responseType == CHAT_MSG_SAY || responseType == CHAT_MSG_YELL) && 
             target->GetDistance(sender) > LLM_Config.ChatRange)
         {
-            LOG_INFO("module.llm_chat", "%s", "DEBUG: Skipping player out of range");
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Skipping %s - out of range", target->GetName().c_str()).c_str());
             continue;
         }
 
-        std::string message = Acore::StringFormat("[AI][%s]: %s", 
-            sender->GetName().c_str(), 
-            response.c_str());
+        // Build the message based on chat type
+        std::string message;
+        switch (responseType)
+        {
+            case CHAT_MSG_SAY:
+                message = Acore::StringFormat("%s says: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_YELL:
+                message = Acore::StringFormat("%s yells: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+                message = Acore::StringFormat("[Party][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_RAID:
+            case CHAT_MSG_RAID_LEADER:
+            case CHAT_MSG_RAID_WARNING:
+                message = Acore::StringFormat("[Raid][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_GUILD:
+            case CHAT_MSG_OFFICER:
+                message = Acore::StringFormat("[Guild][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_BATTLEGROUND:
+            case CHAT_MSG_BATTLEGROUND_LEADER:
+                message = Acore::StringFormat("[Battleground][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_WHISPER:
+                message = Acore::StringFormat("%s whispers: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            case CHAT_MSG_CHANNEL:
+                message = Acore::StringFormat("[Channel][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+            default:
+                message = Acore::StringFormat("[AI][%s]: %s", sender->GetName().c_str(), response.c_str());
+                break;
+        }
 
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("DEBUG: Sending message to player: %s", target->GetName().c_str()).c_str());
-        ChatHandler(target->GetSession()).PSendSysMessage("%s", message.c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sending to %s: '%s'", target->GetName().c_str(), message.c_str()).c_str());
+        
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, responseType, LANG_UNIVERSAL, sender, nullptr, message);
+        target->SendDirectMessage(&data);
     }
 
-    // Log the interaction
-    LOG_INFO("module.llm_chat", "%s", "DEBUG: Finished SendAIResponse");
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Player: %s, Input: %s", sender->GetName().c_str(), msg.c_str()).c_str());
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("AI Response: %s", response.c_str()).c_str());
+    LOG_INFO("module.llm_chat", "%s", "=== Finished AI Response ===\n");
 }
 
 void Add_LLMChatScripts()
