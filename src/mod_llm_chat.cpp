@@ -270,11 +270,12 @@ public:
             return;
         }
 
-        // Log the raw chat message first
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %u, Message: %s", 
+        // Log the raw chat message using StringFormat
+        std::string logMessage = Acore::StringFormat("Chat received from player '%s' (Type: %u): '%s'", 
             player->GetName().c_str(), 
             type, 
             msg.c_str());
+        LOG_INFO("module.llm_chat", "%s", logMessage.c_str());
 
         // Handle different chat types
         switch (type)
@@ -285,9 +286,10 @@ public:
                 if (msg.find("@AI") == 0)
                 {
                     std::string aiMsg = msg.substr(3); // Remove @AI prefix
-                    LOG_INFO("module.llm_chat", "Processing SAY command from %s: %s", 
+                    std::string processLog = Acore::StringFormat("Processing SAY command from '%s': '%s'", 
                         player->GetName().c_str(), 
                         aiMsg.c_str());
+                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
                     SendAIResponse(player, aiMsg, -1, CHAT_MSG_SAY);
                 }
                 break;
@@ -297,9 +299,10 @@ public:
                 if (msg.find("@AI") == 0)
                 {
                     std::string aiMsg = msg.substr(3);
-                    LOG_INFO("module.llm_chat", "Processing YELL command from %s: %s", 
+                    std::string processLog = Acore::StringFormat("Processing YELL command from '%s': '%s'", 
                         player->GetName().c_str(), 
                         aiMsg.c_str());
+                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
                     SendAIResponse(player, aiMsg, -1, CHAT_MSG_YELL);
                 }
                 break;
@@ -310,9 +313,10 @@ public:
                 if (msg.find("@AI") == 0)
                 {
                     std::string aiMsg = msg.substr(3);
-                    LOG_INFO("module.llm_chat", "Processing PARTY command from %s: %s", 
+                    std::string processLog = Acore::StringFormat("Processing PARTY command from '%s': '%s'", 
                         player->GetName().c_str(), 
                         aiMsg.c_str());
+                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
                     SendAIResponse(player, aiMsg, -1, CHAT_MSG_PARTY);
                 }
                 break;
@@ -322,9 +326,10 @@ public:
                 if (msg.find("@AI") == 0)
                 {
                     std::string aiMsg = msg.substr(3);
-                    LOG_INFO("module.llm_chat", "Processing GUILD command from %s: %s", 
+                    std::string processLog = Acore::StringFormat("Processing GUILD command from '%s': '%s'", 
                         player->GetName().c_str(), 
                         aiMsg.c_str());
+                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
                     SendAIResponse(player, aiMsg, -1, CHAT_MSG_GUILD);
                 }
                 break;
@@ -334,9 +339,10 @@ public:
                 if (msg.find("@AI") == 0)
                 {
                     std::string aiMsg = msg.substr(3);
-                    LOG_INFO("module.llm_chat", "Processing WHISPER command from %s: %s", 
+                    std::string processLog = Acore::StringFormat("Processing WHISPER command from '%s': '%s'", 
                         player->GetName().c_str(), 
                         aiMsg.c_str());
+                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
                     SendAIResponse(player, aiMsg, player->GetTeamId(), CHAT_MSG_WHISPER);
                 }
                 break;
@@ -396,48 +402,56 @@ public:
 
 void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
 {
-    LOG_INFO("module.llm_chat", "Starting AI Response - Player: %s, Message: %s, Type: %u", 
+    std::string startLog = Acore::StringFormat("Starting AI Response - Player: '%s', Message: '%s', Type: %u", 
         sender->GetName().c_str(), 
         msg.c_str(),
         originalChatType);
+    LOG_INFO("module.llm_chat", "%s", startLog.c_str());
 
     if (!LLM_Config.Enabled)
     {
-        LOG_INFO("module.llm_chat", "Module is disabled for player %s", sender->GetName().c_str());
+        std::string disabledLog = Acore::StringFormat("Module is disabled for player '%s'", sender->GetName().c_str());
+        LOG_INFO("module.llm_chat", "%s", disabledLog.c_str());
         ChatHandler(sender->GetSession()).PSendSysMessage("LLM Chat is disabled.");
         return;
     }
 
     if (!sender->CanSpeak())
     {
-        LOG_INFO("module.llm_chat", "Player %s cannot speak", sender->GetName().c_str());
+        std::string muteLog = Acore::StringFormat("Player '%s' cannot speak", sender->GetName().c_str());
+        LOG_INFO("module.llm_chat", "%s", muteLog.c_str());
         ChatHandler(sender->GetSession()).PSendSysMessage("You can't use LLM Chat while muted!");
         return;
     }
 
-    LOG_INFO("module.llm_chat", "Querying LLM for player %s with message: %s", 
+    std::string queryLog = Acore::StringFormat("Querying LLM for player '%s' with message: '%s'", 
         sender->GetName().c_str(), 
         msg.c_str());
+    LOG_INFO("module.llm_chat", "%s", queryLog.c_str());
 
     std::string response = QueryLLM(msg);
-    LOG_INFO("module.llm_chat", "Got LLM response for %s: %s", 
+    std::string responseLog = Acore::StringFormat("Got LLM response for '%s': '%s'", 
         sender->GetName().c_str(), 
         response.c_str());
+    LOG_INFO("module.llm_chat", "%s", responseLog.c_str());
 
     if (response.empty() || response.find("Error") != std::string::npos)
     {
-        LOG_INFO("module.llm_chat", "Error in LLM response for %s", sender->GetName().c_str());
+        std::string errorLog = Acore::StringFormat("Error in LLM response for '%s'", sender->GetName().c_str());
+        LOG_INFO("module.llm_chat", "%s", errorLog.c_str());
         response = "Sorry, I couldn't process your message.";
     }
 
     response = LLM_Config.ResponsePrefix + response;
-    LOG_INFO("module.llm_chat", "Final response for %s: %s", 
+    std::string finalLog = Acore::StringFormat("Final response for '%s': '%s'", 
         sender->GetName().c_str(), 
         response.c_str());
+    LOG_INFO("module.llm_chat", "%s", finalLog.c_str());
 
     // Use the original chat type for the response
     uint32 responseType = originalChatType;
-    LOG_INFO("module.llm_chat", "Sending response using chat type: %u", responseType);
+    std::string typeLog = Acore::StringFormat("Sending response using chat type: %u", responseType);
+    LOG_INFO("module.llm_chat", "%s", typeLog.c_str());
 
     SessionMap sessions = sWorld->GetAllSessions();
     for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
@@ -446,12 +460,14 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
             continue;
 
         Player* target = itr->second->GetPlayer();
-        LOG_INFO("module.llm_chat", "Checking player %s for message delivery", target->GetName().c_str());
+        std::string targetLog = Acore::StringFormat("Checking player '%s' for message delivery", target->GetName().c_str());
+        LOG_INFO("module.llm_chat", "%s", targetLog.c_str());
 
         // Check team if specified
         if (team != -1 && target->GetTeamId() != team)
         {
-            LOG_INFO("module.llm_chat", "Skipping player %s - wrong team", target->GetName().c_str());
+            std::string skipLog = Acore::StringFormat("Skipping player '%s' - wrong team", target->GetName().c_str());
+            LOG_INFO("module.llm_chat", "%s", skipLog.c_str());
             continue;
         }
 
@@ -459,7 +475,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         if ((responseType == CHAT_MSG_SAY || responseType == CHAT_MSG_YELL) && 
             target->GetDistance(sender) > LLM_Config.ChatRange)
         {
-            LOG_INFO("module.llm_chat", "Skipping player %s - out of range", target->GetName().c_str());
+            std::string rangeLog = Acore::StringFormat("Skipping player '%s' - out of range", target->GetName().c_str());
+            LOG_INFO("module.llm_chat", "%s", rangeLog.c_str());
             continue;
         }
 
@@ -470,15 +487,16 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         {
             case CHAT_MSG_WHISPER:
                 ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, sender, target, response);
-                LOG_INFO("module.llm_chat", "Built whisper packet from %s to %s", 
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built whisper packet from '%s' to '%s'", 
                     sender->GetName().c_str(), 
-                    target->GetName().c_str());
+                    target->GetName().c_str()).c_str());
                 break;
 
             case CHAT_MSG_SAY:
             case CHAT_MSG_YELL:
                 ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, response);
-                LOG_INFO("module.llm_chat", "Built say/yell packet from %s", sender->GetName().c_str());
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built say/yell packet from '%s'", 
+                    sender->GetName().c_str()).c_str());
                 break;
 
             case CHAT_MSG_PARTY:
@@ -486,7 +504,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
                 if (target->GetGroup() && target->GetGroup() == sender->GetGroup())
                 {
                     ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, response);
-                    LOG_INFO("module.llm_chat", "Built party packet from %s", sender->GetName().c_str());
+                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built party packet from '%s'", 
+                        sender->GetName().c_str()).c_str());
                 }
                 else
                 {
@@ -498,7 +517,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
                 if (target->GetGuild() && target->GetGuild() == sender->GetGuild())
                 {
                     ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, sender, nullptr, response);
-                    LOG_INFO("module.llm_chat", "Built guild packet from %s", sender->GetName().c_str());
+                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built guild packet from '%s'", 
+                        sender->GetName().c_str()).c_str());
                 }
                 else
                 {
@@ -508,7 +528,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
 
             default:
                 ChatHandler(target->GetSession()).PSendSysMessage("[AI] %s: %s", sender->GetName().c_str(), response.c_str());
-                LOG_INFO("module.llm_chat", "Sent system message from %s", sender->GetName().c_str());
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sent system message from '%s'", 
+                    sender->GetName().c_str()).c_str());
                 shouldSend = false;
                 break;
         }
@@ -516,11 +537,13 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         if (shouldSend)
         {
             target->SendDirectMessage(&data);
-            LOG_INFO("module.llm_chat", "Sent message to %s", target->GetName().c_str());
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sent message to '%s'", 
+                target->GetName().c_str()).c_str());
         }
     }
 
-    LOG_INFO("module.llm_chat", "Finished sending AI response for %s\n", sender->GetName().c_str());
+    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Finished sending AI response for '%s'\n", 
+        sender->GetName().c_str()).c_str());
 }
 
 void Add_LLMChatScripts()
