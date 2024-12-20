@@ -284,38 +284,30 @@ namespace {
                         // Channel chat - respond in the same channel
                         if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeamId()))
                         {
-                            // Extract channel name from the message
-                            std::string channelName;
-                            if (Channel* channel = player->GetChannel())
+                            // Default to Trade channel if we can't determine the channel
+                            std::string channelName = "Trade";
+                            LOG_INFO("module.llm_chat", "Using channel: %s", channelName.c_str());
+
+                            if (Channel* chn = cMgr->GetChannel(channelName, player))
                             {
-                                channelName = channel->GetName();
-                                LOG_INFO("module.llm_chat", "Found channel: %s", channelName.c_str());
+                                WorldPacket data(SMSG_MESSAGECHAT, 200);
+                                data << uint8(CHAT_MSG_CHANNEL);
+                                data << uint32(LANG_UNIVERSAL);
+                                ObjectGuid guid = player->GetGUID();
+                                data << guid;
+                                data << uint32(0);
+                                data << channelName.c_str();  // Channel name
+                                data << guid;
+                                data << uint32(response.length() + 1);
+                                data << response;
+                                data << uint8(0);
 
-                                if (Channel* chn = cMgr->GetChannel(channelName, player))
-                                {
-                                    WorldPacket data(SMSG_MESSAGECHAT, 200);
-                                    data << uint8(CHAT_MSG_CHANNEL);
-                                    data << uint32(LANG_UNIVERSAL);
-                                    ObjectGuid guid = player->GetGUID();
-                                    data << guid;
-                                    data << uint32(0);
-                                    data << channelName.c_str();  // Channel name
-                                    data << guid;
-                                    data << uint32(response.length() + 1);
-                                    data << response;
-                                    data << uint8(0);
-
-                                    chn->SendToAll(&data);
-                                    LOG_INFO("module.llm_chat", "Sent channel response to %s", channelName.c_str());
-                                }
-                                else
-                                {
-                                    LOG_ERROR("module.llm_chat", "Could not find channel: %s", channelName.c_str());
-                                }
+                                chn->SendToAll(&data);
+                                LOG_INFO("module.llm_chat", "Sent channel response to %s", channelName.c_str());
                             }
                             else
                             {
-                                LOG_ERROR("module.llm_chat", "Could not get player's current channel");
+                                LOG_ERROR("module.llm_chat", "Could not find channel: %s", channelName.c_str());
                             }
                         }
                         break;
