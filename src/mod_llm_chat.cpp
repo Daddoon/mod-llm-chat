@@ -40,6 +40,7 @@ namespace {
         float ChatRange;
         std::string ResponsePrefix;
         int32 LogLevel;
+        bool EnableBotResponses;
         // URL parsing components
         std::string Host;
         std::string Port;
@@ -270,80 +271,95 @@ public:
             return;
         }
 
-        // Log the raw chat message using StringFormat
+        // Log the raw chat message
         std::string logMessage = Acore::StringFormat("Chat received from player '%s' (Type: %u): '%s'", 
             player->GetName().c_str(), 
             type, 
             msg.c_str());
         LOG_INFO("module.llm_chat", "%s", logMessage.c_str());
 
+        // Check if message is from a bot
+        bool isBot = player->GetSession() && player->GetSession()->IsBot();
+        
+        // If it's a bot message, only respond if it's not an AI response (to avoid loops)
+        if (isBot && msg.find(LLM_Config.ResponsePrefix) == 0)
+        {
+            LOG_INFO("module.llm_chat", "Ignoring bot AI response to prevent loops");
+            return;
+        }
+
         // Handle different chat types
         switch (type)
         {
             case CHAT_MSG_SAY:
             {
-                // Only process if message starts with AI trigger
-                if (msg.find("@AI") == 0)
+                std::string processLog = Acore::StringFormat("Processing SAY command from '%s' (Bot: %s): '%s'", 
+                    player->GetName().c_str(),
+                    isBot ? "yes" : "no", 
+                    msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", processLog.c_str());
+                
+                // Only respond if it's a player message or a non-AI bot message
+                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
                 {
-                    std::string aiMsg = msg.substr(3); // Remove @AI prefix
-                    std::string processLog = Acore::StringFormat("Processing SAY command from '%s': '%s'", 
-                        player->GetName().c_str(), 
-                        aiMsg.c_str());
-                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                    SendAIResponse(player, aiMsg, -1, CHAT_MSG_SAY);
+                    SendAIResponse(player, msg, -1, CHAT_MSG_SAY);
                 }
                 break;
             }
             case CHAT_MSG_YELL:
             {
-                if (msg.find("@AI") == 0)
+                std::string processLog = Acore::StringFormat("Processing YELL command from '%s' (Bot: %s): '%s'", 
+                    player->GetName().c_str(),
+                    isBot ? "yes" : "no", 
+                    msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", processLog.c_str());
+                
+                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
                 {
-                    std::string aiMsg = msg.substr(3);
-                    std::string processLog = Acore::StringFormat("Processing YELL command from '%s': '%s'", 
-                        player->GetName().c_str(), 
-                        aiMsg.c_str());
-                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                    SendAIResponse(player, aiMsg, -1, CHAT_MSG_YELL);
+                    SendAIResponse(player, msg, -1, CHAT_MSG_YELL);
                 }
                 break;
             }
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
             {
-                if (msg.find("@AI") == 0)
+                std::string processLog = Acore::StringFormat("Processing PARTY command from '%s' (Bot: %s): '%s'", 
+                    player->GetName().c_str(),
+                    isBot ? "yes" : "no", 
+                    msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", processLog.c_str());
+                
+                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
                 {
-                    std::string aiMsg = msg.substr(3);
-                    std::string processLog = Acore::StringFormat("Processing PARTY command from '%s': '%s'", 
-                        player->GetName().c_str(), 
-                        aiMsg.c_str());
-                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                    SendAIResponse(player, aiMsg, -1, CHAT_MSG_PARTY);
+                    SendAIResponse(player, msg, -1, CHAT_MSG_PARTY);
                 }
                 break;
             }
             case CHAT_MSG_GUILD:
             {
-                if (msg.find("@AI") == 0)
+                std::string processLog = Acore::StringFormat("Processing GUILD command from '%s' (Bot: %s): '%s'", 
+                    player->GetName().c_str(),
+                    isBot ? "yes" : "no", 
+                    msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", processLog.c_str());
+                
+                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
                 {
-                    std::string aiMsg = msg.substr(3);
-                    std::string processLog = Acore::StringFormat("Processing GUILD command from '%s': '%s'", 
-                        player->GetName().c_str(), 
-                        aiMsg.c_str());
-                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                    SendAIResponse(player, aiMsg, -1, CHAT_MSG_GUILD);
+                    SendAIResponse(player, msg, -1, CHAT_MSG_GUILD);
                 }
                 break;
             }
             case CHAT_MSG_WHISPER:
             {
-                if (msg.find("@AI") == 0)
+                std::string processLog = Acore::StringFormat("Processing WHISPER command from '%s' (Bot: %s): '%s'", 
+                    player->GetName().c_str(),
+                    isBot ? "yes" : "no", 
+                    msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", processLog.c_str());
+                
+                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
                 {
-                    std::string aiMsg = msg.substr(3);
-                    std::string processLog = Acore::StringFormat("Processing WHISPER command from '%s': '%s'", 
-                        player->GetName().c_str(), 
-                        aiMsg.c_str());
-                    LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                    SendAIResponse(player, aiMsg, player->GetTeamId(), CHAT_MSG_WHISPER);
+                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_WHISPER);
                 }
                 break;
             }
@@ -382,6 +398,7 @@ public:
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
+        LLM_Config.EnableBotResponses = sConfigMgr->GetOption<int32>("LLMChat.EnableBotResponses", 1) == 1;
 
         // Parse the endpoint URL
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
@@ -396,6 +413,7 @@ public:
         LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Port: %s", LLM_Config.Port.c_str()).c_str());
         LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Target: %s", LLM_Config.Target.c_str()).c_str());
         LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Log Level: %d", LLM_Config.LogLevel).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("EnableBotResponses: %s", LLM_Config.EnableBotResponses ? "true" : "false").c_str());
         LOG_INFO("module.llm_chat", "%s", "=== End Configuration ===\n");
     }
 };
