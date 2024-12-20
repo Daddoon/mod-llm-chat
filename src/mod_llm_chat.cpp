@@ -405,32 +405,27 @@ public:
 
 Player* GetNearbyBot(Player* player, float maxDistance)
 {
-    std::vector<Player*> nearbyBots;
-    
-    // Get list of players in range using grid search
-    Map* map = player->GetMap();
-    if (!map)
+    if (!player || !player->IsInWorld())
         return nullptr;
 
-    // Get players in visibility range
-    float visibleRange = player->GetVisibilityRange();
-    maxDistance = std::min(maxDistance, visibleRange);
+    std::vector<Player*> nearbyBots;
+    
+    // Get list of players in range
+    std::list<Player*> nearbyPlayers;
+    player->GetPlayerListInRange(nearbyPlayers, maxDistance);
 
-    // Use grid search to get nearby players
-    player->GetMap()->VisitWorld(player->GetPositionX(), player->GetPositionY(), maxDistance, [&nearbyBots, player](WorldObject* obj) {
-        if (!obj || !obj->IsInWorld() || !obj->IsPlayer())
-            return;
-
-        Player* nearby = obj->ToPlayer();
+    // Filter for bots only
+    for (Player* nearby : nearbyPlayers)
+    {
         if (!nearby || nearby == player)
-            return;
+            continue;
 
         // Check if it's a playerbot
         if (nearby->GetPlayerbotAI())
         {
             nearbyBots.push_back(nearby);
         }
-    });
+    }
 
     if (nearbyBots.empty())
         return nullptr;
