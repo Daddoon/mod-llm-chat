@@ -13,6 +13,9 @@
 #include "Guild.h"
 #include "ChannelMgr.h"
 #include "mod_llm_chat.h"
+#include "Playerbots.h"
+#include "PlayerbotAIConfig.h"
+#include "PlayerbotAI.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
@@ -400,6 +403,35 @@ public:
     }
 };
 
+Player* GetNearbyBot(Player* player, float maxDistance)
+{
+    std::vector<Player*> nearbyBots;
+    
+    // Get list of players in range
+    std::list<Player*> players;
+    player->GetPlayerListInGrid(players, maxDistance);
+    
+    // Filter for bots only
+    for (Player* nearby : players)
+    {
+        if (!nearby || !nearby->IsInWorld())
+            continue;
+
+        // Check if it's a playerbot
+        if (nearby->GetPlayerbotAI())
+        {
+            nearbyBots.push_back(nearby);
+        }
+    }
+
+    if (nearbyBots.empty())
+        return nullptr;
+
+    // Select random bot from available ones
+    uint32 randomIndex = urand(0, nearbyBots.size() - 1);
+    return nearbyBots[randomIndex];
+}
+
 void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
 {
     std::string startLog = Acore::StringFormat("Starting AI Response - Player: '%s', Message: '%s', Type: %u", 
@@ -415,45 +447,59 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         return;
     }
 
-    // Get all sessions to find a playerbot to respond
-    SessionMap sessions = sWorld->GetAllSessions();
-    std::vector<Player*> availableBots;
-
-    // Find all eligible bots
-    for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+    // Find a nearby bot to respond
+    Player* respondingBot = nullptr;
+    
+    if (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL)
     {
-        if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
-            continue;
-
-        Player* potentialBot = itr->second->GetPlayer();
-        
-        // Check if it's a bot
-        if (potentialBot->GetSession() && potentialBot->GetSession()->IsBot())
+        // For local chat, find a nearby bot
+        respondingBot = GetNearbyBot(sender, LLM_Config.ChatRange);
+        if (!respondingBot)
         {
-            // For local chat types, check range
-            if ((originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL) && 
-                potentialBot->GetDistance(sender) <= LLM_Config.ChatRange)
+            LOG_INFO("module.llm_chat", "No nearby bots found to respond");
+            return;
+        }
+    }
+    else
+    {
+        // For other chat types, find any available bot
+        SessionMap sessions = sWorld->GetAllSessions();
+        std::vector<Player*> availableBots;
+
+        for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+        {
+            if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
+                continue;
+
+            Player* potentialBot = itr->second->GetPlayer();
+            if (potentialBot->GetPlayerbotAI())
             {
-                availableBots.push_back(potentialBot);
-            }
-            // For other chat types, just add to available bots
-            else if (originalChatType != CHAT_MSG_SAY && originalChatType != CHAT_MSG_YELL)
-            {
+                // For party chat, check if in same group
+                if (originalChatType == CHAT_MSG_PARTY && 
+                    (!potentialBot->GetGroup() || potentialBot->GetGroup() != sender->GetGroup()))
+                    continue;
+
+                // For guild chat, check if in same guild
+                if (originalChatType == CHAT_MSG_GUILD && 
+                    (!potentialBot->GetGuild() || potentialBot->GetGuild() != sender->GetGuild()))
+                    continue;
+
                 availableBots.push_back(potentialBot);
             }
         }
+
+        if (!availableBots.empty())
+        {
+            uint32 randomIndex = urand(0, availableBots.size() - 1);
+            respondingBot = availableBots[randomIndex];
+        }
     }
 
-    // If no bots available, log and return
-    if (availableBots.empty())
+    if (!respondingBot)
     {
         LOG_INFO("module.llm_chat", "No eligible bots found to respond");
         return;
     }
-
-    // Select a random bot to respond
-    uint32 randomIndex = urand(0, availableBots.size() - 1);
-    Player* respondingBot = availableBots[randomIndex];
 
     LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
 
@@ -471,16 +517,23 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         response = response.substr(LLM_Config.ResponsePrefix.length());
     }
 
-    // Have the bot send the message
+    // Have the bot send the message using PlayerbotAI
+    PlayerbotAI* botAI = respondingBot->GetPlayerbotAI();
+    if (!botAI)
+    {
+        LOG_INFO("module.llm_chat", "Selected bot has no AI");
+        return;
+    }
+
     switch (originalChatType)
     {
         case CHAT_MSG_SAY:
-            respondingBot->Say(response, LANG_UNIVERSAL);
+            botAI->TellPlayer(sender, response, CHAT_MSG_SAY);
             LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
         case CHAT_MSG_YELL:
-            respondingBot->Yell(response, LANG_UNIVERSAL);
+            botAI->TellPlayer(sender, response, CHAT_MSG_YELL);
             LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
@@ -488,9 +541,7 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_PARTY_LEADER:
             if (respondingBot->GetGroup() && respondingBot->GetGroup() == sender->GetGroup())
             {
-                WorldPacket data;
-                ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
-                respondingBot->GetGroup()->BroadcastPacket(&data, false);
+                botAI->TellPlayer(sender, response, CHAT_MSG_PARTY);
                 LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
@@ -498,18 +549,18 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_GUILD:
             if (respondingBot->GetGuild() && respondingBot->GetGuild() == sender->GetGuild())
             {
-                respondingBot->GetGuild()->BroadcastToGuild(respondingBot->GetSession(), false, response, LANG_UNIVERSAL);
+                botAI->TellPlayer(sender, response, CHAT_MSG_GUILD);
                 LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
             
         case CHAT_MSG_WHISPER:
-            ChatHandler(sender->GetSession()).PSendSysMessage("%s whispers: %s", respondingBot->GetName().c_str(), response.c_str());
+            botAI->TellPlayer(sender, response, CHAT_MSG_WHISPER);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
             
         default:
-            ChatHandler(sender->GetSession()).PSendSysMessage("%s: %s", respondingBot->GetName().c_str(), response.c_str());
+            botAI->TellPlayer(sender, response);
             LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
     }
