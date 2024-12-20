@@ -166,7 +166,7 @@ private:
     }
 };
 
-void AddLLMChatScripts()
+void Add_LLMChatScripts()
 {
     new LLMChat_Config();
     new LLMChatModule();
