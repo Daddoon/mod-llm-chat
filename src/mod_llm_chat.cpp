@@ -26,6 +26,9 @@ namespace net = boost::asio;
 using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
+// Forward declarations
+void SendAIResponse(Player* sender, const std::string& msg, int team = -1);
+
 namespace {
     /* Config Variables */
     struct LLMConfig
