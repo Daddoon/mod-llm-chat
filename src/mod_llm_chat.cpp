@@ -50,7 +50,7 @@ namespace {
 
         void OnBeforeConfigLoad(bool /*reload*/) override
         {
-            LLM_Config.Enabled = sConfigMgr->GetBoolDefault("LLM.Enable", false);
+            LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLM.Enable", 0) == 1;
             LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLM.Provider", 1);
             LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/generate");
             LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:3b");
@@ -265,8 +265,59 @@ namespace {
     };
 }
 
+class LLMChatAnnounce : public PlayerScript
+{
+public:
+    LLMChatAnnounce() : PlayerScript("LLMChatAnnounce") {}
+
+    void OnLogin(Player* player) override
+    {
+        // Announce Module
+        if (sConfigMgr->GetOption<int32>("LLMChat.Announce", 1))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module.");
+        }
+    }
+};
+
+class LLMChatConfig : public WorldScript
+{
+public:
+    LLMChatConfig() : WorldScript("LLMChatConfig") {}
+
+    void OnBeforeConfigLoad(bool /*reload*/) override
+    {
+        LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
+        LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
+        LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:3b");
+        LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
+        LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
+        LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 2);
+
+        // Parse endpoint URL
+        size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
+        if (protocolEnd != std::string::npos) {
+            std::string url = LLM_Config.OllamaEndpoint.substr(protocolEnd + 3);
+            size_t pathStart = url.find('/');
+            std::string hostPort = url.substr(0, pathStart);
+            LLM_Config.Target = url.substr(pathStart);
+
+            size_t portStart = hostPort.find(':');
+            if (portStart != std::string::npos) {
+                LLM_Config.Host = hostPort.substr(0, portStart);
+                LLM_Config.Port = hostPort.substr(portStart + 1);
+            } else {
+                LLM_Config.Host = hostPort;
+                LLM_Config.Port = "80";
+            }
+        }
+    }
+};
+
 void Add_LLMChatScripts()
 {
-    new LLMChat_Config();
+    new LLMChatAnnounce();
+    new LLMChatConfig();
     new LLMChatModule();
 } 

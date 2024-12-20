@@ -2,69 +2,60 @@
 
 ###################################################################################################
 # LLM CHAT SYSTEM
-#
-# These settings control the LLM Chat System
-#
-#    LLM.Enable
-#        Description: Enables LLM Chat System
+###################################################################################################
+
+#    LLMChat.Enable
+#        Description: Enable the LLM Chat module
 #        Default:     1  - (Enabled)
 #                     0  - (Disabled)
 
-LLM.Enable = 1
+LLMChat.Enable = 1
 
-#
-#    LLM.Provider
+#    LLMChat.Announce
+#        Description: Announce the module on player login
+#        Default:     1  - (Enabled)
+#                     0  - (Disabled)
+
+LLMChat.Announce = 1
+
+#    LLMChat.Provider
 #        Description: Which LLM provider to use
-#        1 - Ollama
-#        2 - LM Studio
-#        Default: 1 (Ollama)
-#
+#        Default:     1  - (Ollama)
+#                     2  - (LM Studio)
 
-LLM.Provider = 1
+LLMChat.Provider = 1
 
-#
-#    LLM.Ollama.Endpoint
+#    LLMChat.Ollama.Endpoint
 #        Description: Endpoint URL for Ollama API
-#        Default: "http://localhost:11434/api/generate"
-#
+#        Default:    "http://localhost:11434/api/generate"
 
-LLM.Ollama.Endpoint = "http://localhost:11434/api/generate"
+LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
 
-#
-#    LLM.Ollama.Model
+#    LLMChat.Ollama.Model
 #        Description: Model to use with Ollama
-#        Default: "llama3.2:3b"
-#
+#        Default:    "llama3.2:3b"
 
-LLM.Ollama.Model = "llama3.2:3b"
+LLMChat.Ollama.Model = "llama3.2:3b"
 
-#
-#    LLM.ChatRange
+#    LLMChat.ChatRange
 #        Description: Range in yards for AI chat responses to be visible
-#        Default: 25.0
-#
+#        Default:     25.0
 
-LLM.ChatRange = 25.0
+LLMChat.ChatRange = 25.0
 
-#
-#    LLM.ResponsePrefix
+#    LLMChat.ResponsePrefix
 #        Description: Prefix for AI responses in chat
-#        Default: "[AI] "
-#
+#        Default:    "[AI] "
 
-LLM.ResponsePrefix = "[AI] "
+LLMChat.ResponsePrefix = "[AI] "
 
-#
-#    LLM.LogLevel
+#    LLMChat.LogLevel
 #        Description: Level of logging detail
-#        0 - Disabled
-#        1 - Errors Only
-#        2 - Basic
-#        3 - Detailed
-#        Default: 2
-#
+#        Default:     2  - (Basic)
+#                     0  - (Disabled)
+#                     1  - (Errors Only)
+#                     3  - (Detailed)
 
-LLM.LogLevel = 2
+LLMChat.LogLevel = 2
 
-#
 ################################################################################################### 
