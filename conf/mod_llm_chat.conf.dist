@@ -7,10 +7,10 @@
 #
 #    LLM.Enable
 #        Description: Enables LLM Chat System
-#        Default:     True  - (Enabled)
-#                     False - (Disabled)
+#        Default:     1  - (Enabled)
+#                     0  - (Disabled)
 
-LLM.Enable = true
+LLM.Enable = 1
 
 #
 #    LLM.Provider
@@ -25,10 +25,10 @@ LLM.Provider = 1
 #
 #    LLM.Ollama.Endpoint
 #        Description: Endpoint URL for Ollama API
-#        Default: "http://localhost:11435/api/generate"
+#        Default: "http://localhost:11434/api/generate"
 #
 
-LLM.Ollama.Endpoint = "http://localhost:11435/api/generate"
+LLM.Ollama.Endpoint = "http://localhost:11434/api/generate"
 
 #
 #    LLM.Ollama.Model

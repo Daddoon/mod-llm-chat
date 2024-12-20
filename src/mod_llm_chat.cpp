@@ -50,9 +50,9 @@ namespace {
 
         void OnBeforeConfigLoad(bool /*reload*/) override
         {
-            LLM_Config.Enabled = sConfigMgr->GetOption<bool>("LLM.Enable", false);
+            LLM_Config.Enabled = sConfigMgr->GetBoolDefault("LLM.Enable", false);
             LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLM.Provider", 1);
-            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11435/api/chat");
+            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/generate");
             LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:3b");
             LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
             LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
@@ -119,16 +119,19 @@ namespace {
 
             // Get response from LLM
             std::string response = QueryLLM(msg);
+            LLMChatLogger::Log(2, "Got response from QueryLLM: " + response);
 
             // Check for invalid or empty responses
             if (response.empty() || response.find("Error") != std::string::npos) {
                 response = "Sorry, I couldn't process your message.";
+                LLMChatLogger::Log(1, "Using error response: " + response);
             }
 
             // Send response in chat
             if (!response.empty())
             {
                 response = LLM_Config.ResponsePrefix + response;
+                LLMChatLogger::Log(2, "Sending final response: " + response);
                 
                 // Use a more visible method for all chat types
                 WorldPacket data(SMSG_MESSAGECHAT, 200);
@@ -144,9 +147,11 @@ namespace {
 
                 // Send to all nearby players
                 player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
+                LLMChatLogger::Log(2, "Sent range message");
                 
                 // Also send as system message to ensure visibility
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FFFF%s|r", response.c_str());
+                LLMChatLogger::Log(2, "Sent system message");
                 
                 // Log the interaction
                 LLMChatLogger::LogChat(player->GetName(), msg, response);
@@ -156,10 +161,28 @@ namespace {
         std::string ParseLLMResponse(std::string const& rawResponse)
         {
             try {
+                LLMChatLogger::Log(2, "Raw response from Ollama: " + rawResponse);
                 json response = json::parse(rawResponse);
-                if (response.contains("response")) {
-                    return response["response"];
+                
+                // Check if this is a streaming response
+                if (response.contains("done")) {
+                    // This is a streaming response
+                    if (response["done"].get<bool>()) {
+                        // This is the final response in the stream
+                        return response["response"].get<std::string>();
+                    }
+                    // This is a partial response, ignore it
+                    return "";
                 }
+                
+                // Non-streaming response
+                if (response.contains("response")) {
+                    std::string aiResponse = response["response"].get<std::string>();
+                    LLMChatLogger::Log(2, "Parsed AI response: " + aiResponse);
+                    return aiResponse;
+                }
+                
+                LLMChatLogger::Log(1, "Response missing 'response' field: " + rawResponse);
                 return "Error parsing LLM response";
             }
             catch (json::parse_error const& e) {
@@ -171,11 +194,18 @@ namespace {
         std::string QueryLLM(std::string const& message)
         {
             try {
+                // Prepare request payload according to Ollama API spec
                 std::string jsonPayload = json({
                     {"model", LLM_Config.OllamaModel},
                     {"prompt", message},
-                    {"stream", false}
+                    {"stream", false},  // Explicitly disable streaming
+                    {"options", {
+                        {"temperature", 0.7},  // Add some randomness to responses
+                        {"num_predict", 100}   // Limit response length
+                    }}
                 }).dump();
+
+                LLMChatLogger::Log(2, "Sending request to Ollama: " + jsonPayload);
 
                 // Set up the IO context
                 net::io_context ioc;
@@ -186,9 +216,11 @@ namespace {
 
                 // Look up the domain name
                 auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
+                LLMChatLogger::Log(2, "Resolved host: " + LLM_Config.Host + ":" + LLM_Config.Port);
 
                 // Make the connection on the IP address we get from a lookup
                 stream.connect(results);
+                LLMChatLogger::Log(2, "Connected to Ollama");
 
                 // Set up an HTTP POST request message
                 http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -200,6 +232,7 @@ namespace {
 
                 // Send the HTTP request to the remote host
                 http::write(stream, req);
+                LLMChatLogger::Log(2, "Sent request to Ollama");
 
                 // This buffer is used for reading and must be persisted
                 beast::flat_buffer buffer;
@@ -209,6 +242,7 @@ namespace {
 
                 // Receive the HTTP response
                 http::read(stream, buffer, res);
+                LLMChatLogger::Log(2, "Received response from Ollama");
 
                 // Gracefully close the socket
                 beast::error_code ec;
@@ -219,7 +253,9 @@ namespace {
                     return "Error communicating with service";
                 }
 
-                return ParseLLMResponse(res.body());
+                std::string response = ParseLLMResponse(res.body());
+                LLMChatLogger::Log(2, "Final response to be sent: " + response);
+                return response;
             }
             catch (std::exception const& e) {
                 LLMChatLogger::Log(1, "Error in HTTP request: " + std::string(e.what()));
