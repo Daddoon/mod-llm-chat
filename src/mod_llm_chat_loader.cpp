@@ -4,7 +4,8 @@
 
 void Add_LLMChatScripts();
 
-void AddLLMChatScripts()
+// This is the function AzerothCore looks for
+void Addmod_llm_chatScripts()
 {
     Add_LLMChatScripts();
 }
