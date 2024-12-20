@@ -158,126 +158,126 @@ namespace {
                     break;
             }
         }
+    };
 
-        std::string ParseLLMResponse(std::string const& rawResponse)
-        {
-            try {
-                LOG_INFO("module.llm_chat", "Parsing API Response...");
-                json response = json::parse(rawResponse);
-                
-                // Check if this is a streaming response
-                if (response.contains("done")) {
-                    LOG_INFO("module.llm_chat", "Found streaming response");
-                    // This is a streaming response
-                    if (response["done"].get<bool>()) {
-                        // This is the final response in the stream
-                        std::string result = response["response"].get<std::string>();
-                        LOG_INFO("module.llm_chat", "Final stream response: %s", result.c_str());
-                        return result;
-                    }
-                    LOG_INFO("module.llm_chat", "Partial stream response - ignoring");
-                    // This is a partial response, ignore it
-                    return "";
+    std::string ParseLLMResponse(std::string const& rawResponse)
+    {
+        try {
+            LOG_INFO("module.llm_chat", "Parsing API Response...");
+            json response = json::parse(rawResponse);
+            
+            // Check if this is a streaming response
+            if (response.contains("done")) {
+                LOG_INFO("module.llm_chat", "Found streaming response");
+                // This is a streaming response
+                if (response["done"].get<bool>()) {
+                    // This is the final response in the stream
+                    std::string result = response["response"].get<std::string>();
+                    LOG_INFO("module.llm_chat", "Final stream response: %s", result.c_str());
+                    return result;
                 }
-                
-                // Non-streaming response
-                if (response.contains("response")) {
-                    std::string aiResponse = response["response"].get<std::string>();
-                    LOG_INFO("module.llm_chat", "Non-streaming response: %s", aiResponse.c_str());
-                    return aiResponse;
-                }
-                
-                LOG_ERROR("module.llm_chat", "Response missing 'response' field: %s", rawResponse.c_str());
-                return "Error parsing LLM response";
+                LOG_INFO("module.llm_chat", "Partial stream response - ignoring");
+                // This is a partial response, ignore it
+                return "";
             }
-            catch (json::parse_error const& e) {
-                LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
-                return "Error parsing response";
+            
+            // Non-streaming response
+            if (response.contains("response")) {
+                std::string aiResponse = response["response"].get<std::string>();
+                LOG_INFO("module.llm_chat", "Non-streaming response: %s", aiResponse.c_str());
+                return aiResponse;
             }
+            
+            LOG_ERROR("module.llm_chat", "Response missing 'response' field: %s", rawResponse.c_str());
+            return "Error parsing LLM response";
         }
+        catch (json::parse_error const& e) {
+            LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
+            return "Error parsing response";
+        }
+    }
 
-        std::string QueryLLM(std::string const& message)
-        {
-            try {
-                // Prepare request payload according to Ollama API spec
-                std::string jsonPayload = json({
-                    {"model", LLM_Config.OllamaModel},
-                    {"prompt", message},
-                    {"stream", false},  // Explicitly disable streaming
-                    {"options", {
-                        {"temperature", 0.7},    // Add some randomness to responses
-                        {"num_predict", 100},    // Limit response length
-                        {"num_ctx", 512},        // Smaller context window for faster responses
-                        {"num_thread", 4},       // Use 4 threads for inference
-                        {"top_k", 40},          // Limit vocabulary for faster responses
-                        {"top_p", 0.9}          // Nucleus sampling for better quality/speed trade-off
-                    }}
-                }).dump();
+    std::string QueryLLM(std::string const& message)
+    {
+        try {
+            // Prepare request payload according to Ollama API spec
+            std::string jsonPayload = json({
+                {"model", LLM_Config.OllamaModel},
+                {"prompt", message},
+                {"stream", false},  // Explicitly disable streaming
+                {"options", {
+                    {"temperature", 0.7},    // Add some randomness to responses
+                    {"num_predict", 100},    // Limit response length
+                    {"num_ctx", 512},        // Smaller context window for faster responses
+                    {"num_thread", 4},       // Use 4 threads for inference
+                    {"top_k", 40},          // Limit vocabulary for faster responses
+                    {"top_p", 0.9}          // Nucleus sampling for better quality/speed trade-off
+                }}
+            }).dump();
 
-                LOG_INFO("module.llm_chat", "=== API Request ===");
-                LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-                LOG_INFO("module.llm_chat", "Input: %s", message.c_str());
-                LOG_INFO("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
+            LOG_INFO("module.llm_chat", "=== API Request ===");
+            LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+            LOG_INFO("module.llm_chat", "Input: %s", message.c_str());
+            LOG_INFO("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
 
-                // Set up the IO context
-                net::io_context ioc;
+            // Set up the IO context
+            net::io_context ioc;
 
-                // These objects perform our I/O
-                tcp::resolver resolver(ioc);
-                beast::tcp_stream stream(ioc);
+            // These objects perform our I/O
+            tcp::resolver resolver(ioc);
+            beast::tcp_stream stream(ioc);
 
-                // Look up the domain name
-                auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-                LOG_INFO("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
+            // Look up the domain name
+            auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
+            LOG_INFO("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
-                // Make the connection on the IP address we get from a lookup
-                stream.connect(results);
-                LOG_INFO("module.llm_chat", "Connected to Ollama API");
+            // Make the connection on the IP address we get from a lookup
+            stream.connect(results);
+            LOG_INFO("module.llm_chat", "Connected to Ollama API");
 
-                // Set up an HTTP POST request message
-                http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
-                req.set(http::field::host, LLM_Config.Host);
-                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-                req.set(http::field::content_type, "application/json");
-                req.body() = jsonPayload;
-                req.prepare_payload();
+            // Set up an HTTP POST request message
+            http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
+            req.set(http::field::host, LLM_Config.Host);
+            req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+            req.set(http::field::content_type, "application/json");
+            req.body() = jsonPayload;
+            req.prepare_payload();
 
-                // Send the HTTP request to the remote host
-                http::write(stream, req);
-                LOG_INFO("module.llm_chat", "Request sent to API");
+            // Send the HTTP request to the remote host
+            http::write(stream, req);
+            LOG_INFO("module.llm_chat", "Request sent to API");
 
-                // This buffer is used for reading and must be persisted
-                beast::flat_buffer buffer;
+            // This buffer is used for reading and must be persisted
+            beast::flat_buffer buffer;
 
-                // Declare a container to hold the response
-                http::response<http::string_body> res;
+            // Declare a container to hold the response
+            http::response<http::string_body> res;
 
-                // Receive the HTTP response
-                http::read(stream, buffer, res);
-                LOG_INFO("module.llm_chat", "=== API Response ===");
-                LOG_INFO("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
-                LOG_INFO("module.llm_chat", "Raw Response: %s", res.body().c_str());
+            // Receive the HTTP response
+            http::read(stream, buffer, res);
+            LOG_INFO("module.llm_chat", "=== API Response ===");
+            LOG_INFO("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
+            LOG_INFO("module.llm_chat", "Raw Response: %s", res.body().c_str());
 
-                // Gracefully close the socket
-                beast::error_code ec;
-                stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            // Gracefully close the socket
+            beast::error_code ec;
+            stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
-                if (res.result() != http::status::ok) {
-                    LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
-                    return "Error communicating with service";
-                }
-
-                std::string response = ParseLLMResponse(res.body());
-                LOG_INFO("module.llm_chat", "Final Processed Response: %s", response.c_str());
-                LOG_INFO("module.llm_chat", "=== End API Transaction ===\n");
-                return response;
-            }
-            catch (std::exception const& e) {
-                LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
+            if (res.result() != http::status::ok) {
+                LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
                 return "Error communicating with service";
             }
+
+            std::string response = ParseLLMResponse(res.body());
+            LOG_INFO("module.llm_chat", "Final Processed Response: %s", response.c_str());
+            LOG_INFO("module.llm_chat", "=== End API Transaction ===\n");
+            return response;
         }
-    };
+        catch (std::exception const& e) {
+            LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
+            return "Error communicating with service";
+        }
+    }
 }
 
 class LLMChatAnnounce : public PlayerScript
