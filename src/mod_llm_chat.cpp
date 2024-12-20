@@ -480,11 +480,11 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
             data,                           // The packet to build
             static_cast<ChatMsg>(responseType), // Chat type (properly cast)
             LANG_UNIVERSAL,                 // Language
-            sender->GetGUID(),              // Sender GUID
-            ObjectGuid::Empty,              // Receiver GUID (empty for broadcasts)
+            sender,                         // Sender as WorldObject
+            nullptr,                        // Receiver (nullptr for broadcasts)
             message,                        // The message
-            0,                              // Chat Tag
-            "",                            // Channel Name
+            0,                              // Achievement ID
+            "",                             // Channel Name
             DEFAULT_LOCALE                  // Locale
         );
         target->SendDirectMessage(&data);
