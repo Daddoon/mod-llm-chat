@@ -436,57 +436,52 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         }
 
         // Build the message based on chat type
-        std::string message;
-        switch (responseType)
-        {
-            case CHAT_MSG_SAY:
-                message = Acore::StringFormat("%s says: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_YELL:
-                message = Acore::StringFormat("%s yells: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                message = Acore::StringFormat("[Party][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_RAID:
-            case CHAT_MSG_RAID_LEADER:
-            case CHAT_MSG_RAID_WARNING:
-                message = Acore::StringFormat("[Raid][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_GUILD:
-            case CHAT_MSG_OFFICER:
-                message = Acore::StringFormat("[Guild][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_BATTLEGROUND:
-            case CHAT_MSG_BATTLEGROUND_LEADER:
-                message = Acore::StringFormat("[Battleground][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_WHISPER:
-                message = Acore::StringFormat("%s whispers: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            case CHAT_MSG_CHANNEL:
-                message = Acore::StringFormat("[Channel][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-            default:
-                message = Acore::StringFormat("[AI][%s]: %s", sender->GetName().c_str(), response.c_str());
-                break;
-        }
-
+        std::string message = response;  // Just use the raw response
+        
         LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sending to %s: '%s'", target->GetName().c_str(), message.c_str()).c_str());
         
         WorldPacket data;
-        ChatHandler::BuildChatPacket(
-            data,                           // The packet to build
-            static_cast<ChatMsg>(responseType), // Chat type (properly cast)
-            LANG_UNIVERSAL,                 // Language
-            sender,                         // Sender as WorldObject
-            nullptr,                        // Receiver (nullptr for broadcasts)
-            message,                        // The message
-            0,                              // Achievement ID
-            "",                             // Channel Name
-            DEFAULT_LOCALE                  // Locale
-        );
+        if (responseType == CHAT_MSG_CHANNEL && !sender->GetSession()->GetPlayer()->GetChannel()) {
+            LOG_INFO("module.llm_chat", "%s", "No channel found for channel message");
+            continue;
+        }
+
+        // For system messages, use PSendSysMessage
+        if (responseType == CHAT_MSG_SYSTEM) {
+            ChatHandler(target->GetSession()).PSendSysMessage("%s", message.c_str());
+            continue;
+        }
+
+        // For whispers
+        if (responseType == CHAT_MSG_WHISPER) {
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, sender, target, message);
+        }
+        // For say/yell
+        else if (responseType == CHAT_MSG_SAY || responseType == CHAT_MSG_YELL) {
+            ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, message);
+        }
+        // For party/raid
+        else if (responseType == CHAT_MSG_PARTY || responseType == CHAT_MSG_RAID) {
+            if (target->GetGroup() && target->GetGroup() == sender->GetGroup()) {
+                ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, message);
+            } else {
+                continue; // Skip if not in same group
+            }
+        }
+        // For guild
+        else if (responseType == CHAT_MSG_GUILD) {
+            if (target->GetGuild() && target->GetGuild() == sender->GetGuild()) {
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, sender, nullptr, message);
+            } else {
+                continue; // Skip if not in same guild
+            }
+        }
+        // Default to system message for unhandled types
+        else {
+            ChatHandler(target->GetSession()).PSendSysMessage("%s: %s", sender->GetName().c_str(), message.c_str());
+            continue;
+        }
+
         target->SendDirectMessage(&data);
     }
 
