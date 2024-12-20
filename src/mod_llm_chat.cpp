@@ -120,6 +120,10 @@ namespace {
             if (!LLM_Config.Enabled || !player || msg.empty())
                 return;
 
+            // Ignore if player is a bot or not a real player
+            if (!player->GetSession() || player->GetSession()->IsBot() || !player->GetSession()->GetPlayer())
+                return;
+
             // Check if this is a chat type we want to respond to
             if (type != CHAT_MSG_SAY && type != CHAT_MSG_YELL && 
                 type != CHAT_MSG_CHANNEL && type != CHAT_MSG_WHISPER)
@@ -145,24 +149,65 @@ namespace {
                 switch (type)
                 {
                     case CHAT_MSG_SAY:
+                    {
+                        // Create a new WorldPacket for the response
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_MONSTER_SAY);
+                        data << uint32(LANG_UNIVERSAL);
+                        data << uint64(player->GetGUID());
+                        data << uint32(0);                      // Flags
+                        data << uint64(player->GetGUID());      // Target GUID
+                        data << uint32(response.length() + 1);  // Message length
+                        data << response;                       // Message
+                        data << uint8(0);                       // Chat Tag
+
+                        // Send to all players in range
+                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange, true);
+                        break;
+                    }
                     case CHAT_MSG_YELL:
+                    {
+                        // Similar to SAY but with larger range
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_MONSTER_YELL);
+                        data << uint32(LANG_UNIVERSAL);
+                        data << uint64(player->GetGUID());
+                        data << uint32(0);
+                        data << uint64(player->GetGUID());
+                        data << uint32(response.length() + 1);
+                        data << response;
+                        data << uint8(0);
+
+                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
+                        break;
+                    }
+                    case CHAT_MSG_CHANNEL:
+                    {
+                        // For channels, send to the player's current channel
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeam()))
                         {
-                            // Send to nearby players
-                            Map* map = player->GetMap();
-                            if (map && map->IsDungeon())
+                            if (Channel* chn = cMgr->GetChannel("Trade", player))
                             {
-                                map->MonsterSay(response.c_str(), LANG_UNIVERSAL, player);
-                            }
-                            else
-                            {
-                                player->MonsterSay(response.c_str(), LANG_UNIVERSAL, nullptr);
+                                chn->Say(player->GetGUID(), response.c_str(), LANG_UNIVERSAL);
                             }
                         }
                         break;
-                    case CHAT_MSG_CHANNEL:
+                    }
                     case CHAT_MSG_WHISPER:
-                        ChatHandler(player->GetSession()).PSendSysMessage("%s", response.c_str());
+                    {
+                        // Direct whisper back to the player
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_WHISPER);
+                        data << uint32(LANG_UNIVERSAL);
+                        data << uint64(player->GetGUID());
+                        data << uint32(0);
+                        data << uint64(player->GetGUID());
+                        data << uint32(response.length() + 1);
+                        data << response;
+                        data << uint8(0);
+                        player->GetSession()->SendPacket(&data);
                         break;
+                    }
                 }
                 
                 // Log the interaction
