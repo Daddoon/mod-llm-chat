@@ -17,7 +17,7 @@ void AddLLMChatScripts()
 }
 
 // Building dll hook
-extern "C" void AC_EXPORT_SHARED AddScripts()
+AC_EXPORT void AddScripts()
 {
     AddLLMChatScripts();
 } 
