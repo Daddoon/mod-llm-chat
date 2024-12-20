@@ -52,11 +52,11 @@ LLMChat.ResponsePrefix = "[AI] "
 
 #    LLMChat.LogLevel
 #        Description: Level of logging detail
-#        Default:     2  - (Basic)
+#        Default:     3  - (Detailed)
 #                     0  - (Disabled)
 #                     1  - (Errors Only)
-#                     3  - (Detailed)
+#                     2  - (Basic)
 
-LLMChat.LogLevel = 2
+LLMChat.LogLevel = 3
 
 ################################################################################################### 

@@ -103,30 +103,40 @@ namespace {
         {
             // Only process certain chat types
             if (!LLM_Config.Enabled || !player || msg.empty())
+            {
+                LOG_INFO("module.llm_chat", "Chat ignored - Module disabled or invalid message");
                 return;
+            }
 
             // Ignore if player is a bot or not a real player
             if (!player->GetSession() || player->GetSession()->IsBot() || !player->GetSession()->GetPlayer())
+            {
+                LOG_INFO("module.llm_chat", "Chat ignored - From bot or invalid player");
                 return;
+            }
 
-            // Log the incoming message
-            LLMChatLogger::Log(2, "Received chat from " + player->GetName() + ": " + msg);
+            // Log the incoming message with more detail
+            LOG_INFO("module.llm_chat", "=== New Chat Event ===");
+            LOG_INFO("module.llm_chat", "Player: %s", player->GetName().c_str());
+            LOG_INFO("module.llm_chat", "Chat Type: %u", type);
+            LOG_INFO("module.llm_chat", "Message: %s", msg.c_str());
 
             // Get response from LLM
+            LOG_INFO("module.llm_chat", "Querying LLM API...");
             std::string response = QueryLLM(msg);
-            LLMChatLogger::Log(2, "Got response from QueryLLM: " + response);
+            LOG_INFO("module.llm_chat", "Raw LLM Response: %s", response.c_str());
 
             // Check for invalid or empty responses
             if (response.empty() || response.find("Error") != std::string::npos) {
                 response = "Sorry, I couldn't process your message.";
-                LLMChatLogger::Log(1, "Using error response: " + response);
+                LOG_ERROR("module.llm_chat", "Error in LLM response: %s", response.c_str());
             }
 
             // Send response in chat
             if (!response.empty())
             {
                 response = LLM_Config.ResponsePrefix + response;
-                LLMChatLogger::Log(2, "Sending final response: " + response);
+                LOG_INFO("module.llm_chat", "Preparing to send response: %s", response.c_str());
 
                 switch (type)
                 {
