@@ -98,23 +98,7 @@ namespace {
     public:
         LLMChatModule() : PlayerScript("LLMChatModule") {}
 
-        void OnSay(Player* player, uint32 /*type*/, uint32 lang, std::string& msg) override
-        {
-            HandleChat(player, CHAT_MSG_SAY, lang, msg);
-        }
-
-        void OnYell(Player* player, uint32 /*type*/, uint32 lang, std::string& msg) override
-        {
-            HandleChat(player, CHAT_MSG_YELL, lang, msg);
-        }
-
         void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
-        {
-            HandleChat(player, type, lang, msg);
-        }
-
-    private:
-        void HandleChat(Player* player, uint32 type, uint32 lang, std::string& msg)
         {
             // Only process certain chat types
             if (!LLM_Config.Enabled || !player || msg.empty())
