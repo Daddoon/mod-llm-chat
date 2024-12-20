@@ -27,7 +27,7 @@ using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
 // Forward declarations
-void SendAIResponse(Player* sender, const std::string& msg, int team = -1);
+void SendAIResponse(Player* sender, const std::string& msg, int team);
 std::string QueryLLM(std::string const& message);
 std::string ParseLLMResponse(std::string const& rawResponse);
 
@@ -124,7 +124,7 @@ namespace {
     public:
         LLMChatModule() : PlayerScript("LLMChatModule") {}
 
-        void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
+        void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
         {
             if (!LLM_Config.Enabled || !player || msg.empty())
                 return;
@@ -327,7 +327,7 @@ public:
     }
 };
 
-void SendAIResponse(Player* sender, const std::string& msg, int team = -1)
+void SendAIResponse(Player* sender, const std::string& msg, int team)
 {
     if (!LLM_Config.Enabled)
     {
