@@ -35,7 +35,7 @@ namespace {
     public:
         LLMChat_Config() : WorldScript("LLMChat_Config") { }
 
-        void OnBeforeConfigLoad(bool reload) override
+        void OnBeforeConfigLoad(bool /*reload*/) override
         {
             LLM_Config.Enabled = sConfigMgr->GetOption<bool>("LLM.Enable", false);
             LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLM.Provider", 1);
