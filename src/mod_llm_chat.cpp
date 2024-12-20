@@ -282,7 +282,7 @@ namespace {
                     case CHAT_MSG_CHANNEL:
                     {
                         // Channel chat - respond in the same channel
-                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeam()))
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeamId()))
                         {
                             // Extract channel name from the message
                             std::string channelName;
