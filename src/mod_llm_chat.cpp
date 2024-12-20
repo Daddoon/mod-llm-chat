@@ -285,10 +285,10 @@ public:
             msg.c_str());
         LOG_INFO("module.llm_chat", "%s", logMessage.c_str());
 
-        // Only process messages from bots
-        if (!isBot)
+        // Only process messages from real players
+        if (isBot)
         {
-            LOG_INFO("module.llm_chat", "Ignoring message from real player '%s'", player->GetName().c_str());
+            LOG_INFO("module.llm_chat", "Ignoring message from bot '%s'", player->GetName().c_str());
             return;
         }
 
@@ -304,7 +304,7 @@ public:
         {
             case CHAT_MSG_SAY:
             {
-                std::string processLog = Acore::StringFormat("Processing SAY command from bot '%s': '%s'", 
+                std::string processLog = Acore::StringFormat("Processing SAY command from player '%s': '%s'", 
                     player->GetName().c_str(),
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
@@ -313,7 +313,7 @@ public:
             }
             case CHAT_MSG_YELL:
             {
-                std::string processLog = Acore::StringFormat("Processing YELL command from bot '%s': '%s'", 
+                std::string processLog = Acore::StringFormat("Processing YELL command from player '%s': '%s'", 
                     player->GetName().c_str(),
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
@@ -323,7 +323,7 @@ public:
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
             {
-                std::string processLog = Acore::StringFormat("Processing PARTY command from bot '%s': '%s'", 
+                std::string processLog = Acore::StringFormat("Processing PARTY command from player '%s': '%s'", 
                     player->GetName().c_str(),
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
@@ -332,7 +332,7 @@ public:
             }
             case CHAT_MSG_GUILD:
             {
-                std::string processLog = Acore::StringFormat("Processing GUILD command from bot '%s': '%s'", 
+                std::string processLog = Acore::StringFormat("Processing GUILD command from player '%s': '%s'", 
                     player->GetName().c_str(),
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
@@ -341,7 +341,7 @@ public:
             }
             case CHAT_MSG_WHISPER:
             {
-                std::string processLog = Acore::StringFormat("Processing WHISPER command from bot '%s': '%s'", 
+                std::string processLog = Acore::StringFormat("Processing WHISPER command from player '%s': '%s'", 
                     player->GetName().c_str(),
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
