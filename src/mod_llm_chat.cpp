@@ -10,6 +10,7 @@
 #include "Chat.h"
 #include "World.h"
 #include "Channel.h"
+#include "Guild.h"
 #include "mod_llm_chat.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
