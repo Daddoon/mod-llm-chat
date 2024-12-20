@@ -50,13 +50,22 @@ namespace {
 
         void OnBeforeConfigLoad(bool /*reload*/) override
         {
-            LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLM.Enable", 0) == 1;
-            LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLM.Provider", 1);
-            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/generate");
-            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:1b");
-            LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
-            LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
-            LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLM.LogLevel", 2);
+            LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
+            LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
+            LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
+            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
+            LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
+            LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
+            LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
+
+            // Log the loaded configuration
+            LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
+            LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
+            LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
+            LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
+            LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+            LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
+            LOG_INFO("module.llm_chat", "=== End Configuration ===\n");
 
             // Parse endpoint URL
             size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
@@ -101,25 +110,48 @@ namespace {
 
         void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
         {
+            LOG_INFO("module.llm_chat", "OnChat triggered - Type: %u, Message: %s", type, msg.c_str());
+            
             // Only process certain chat types
-            if (!LLM_Config.Enabled || !player || msg.empty())
+            if (!LLM_Config.Enabled)
             {
-                LOG_INFO("module.llm_chat", "Chat ignored - Module disabled or invalid message");
+                LOG_INFO("module.llm_chat", "Module is disabled");
+                return;
+            }
+
+            if (!player)
+            {
+                LOG_INFO("module.llm_chat", "No player object");
+                return;
+            }
+
+            if (msg.empty())
+            {
+                LOG_INFO("module.llm_chat", "Empty message");
                 return;
             }
 
             // Ignore if player is a bot or not a real player
-            if (!player->GetSession() || player->GetSession()->IsBot() || !player->GetSession()->GetPlayer())
+            if (!player->GetSession())
             {
-                LOG_INFO("module.llm_chat", "Chat ignored - From bot or invalid player");
+                LOG_INFO("module.llm_chat", "No player session");
+                return;
+            }
+
+            if (player->GetSession()->IsBot())
+            {
+                LOG_INFO("module.llm_chat", "Player is a bot");
                 return;
             }
 
             // Log the incoming message with more detail
-            LOG_INFO("module.llm_chat", "=== New Chat Event ===");
+            LOG_INFO("module.llm_chat", "\n=== New Chat Event ===");
             LOG_INFO("module.llm_chat", "Player: %s", player->GetName().c_str());
             LOG_INFO("module.llm_chat", "Chat Type: %u", type);
             LOG_INFO("module.llm_chat", "Message: %s", msg.c_str());
+            LOG_INFO("module.llm_chat", "Language: %u", lang);
+            LOG_INFO("module.llm_chat", "Module Enabled: %s", LLM_Config.Enabled ? "true" : "false");
+            LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
 
             // Get response from LLM
             LOG_INFO("module.llm_chat", "Querying LLM API...");
@@ -420,7 +452,7 @@ public:
         LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
-        LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 2);
+        LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
 
         // Parse endpoint URL
         size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
