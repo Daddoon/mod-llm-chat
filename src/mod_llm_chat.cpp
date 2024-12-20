@@ -302,7 +302,7 @@ namespace {
                                 data << response;
                                 data << uint8(0);
 
-                                chn->SendToAll(&data);
+                                chn->SendToAllButOne(&data, ObjectGuid::Empty);  // Send to everyone
                                 LOG_INFO("module.llm_chat", "Sent channel response to %s", channelName.c_str());
                             }
                             else
