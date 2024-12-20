@@ -53,7 +53,7 @@ namespace {
             LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLM.Enable", 0) == 1;
             LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLM.Provider", 1);
             LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLM.Ollama.Endpoint", "http://localhost:11434/api/generate");
-            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:3b");
+            LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLM.Ollama.Model", "llama3.2:1b");
             LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
             LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
             LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLM.LogLevel", 2);
@@ -200,8 +200,12 @@ namespace {
                     {"prompt", message},
                     {"stream", false},  // Explicitly disable streaming
                     {"options", {
-                        {"temperature", 0.7},  // Add some randomness to responses
-                        {"num_predict", 100}   // Limit response length
+                        {"temperature", 0.7},    // Add some randomness to responses
+                        {"num_predict", 100},    // Limit response length
+                        {"num_ctx", 512},        // Smaller context window for faster responses
+                        {"num_thread", 4},       // Use 4 threads for inference
+                        {"top_k", 40},          // Limit vocabulary for faster responses
+                        {"top_p", 0.9}          // Nucleus sampling for better quality/speed trade-off
                     }}
                 }).dump();
 
