@@ -109,11 +109,6 @@ namespace {
             if (!player->GetSession() || player->GetSession()->IsBot() || !player->GetSession()->GetPlayer())
                 return;
 
-            // Check if this is a chat type we want to respond to
-            if (type != CHAT_MSG_SAY && type != CHAT_MSG_YELL && 
-                type != CHAT_MSG_CHANNEL && type != CHAT_MSG_WHISPER)
-                return;
-
             // Log the incoming message
             LLMChatLogger::Log(2, "Received chat from " + player->GetName() + ": " + msg);
 
@@ -132,26 +127,134 @@ namespace {
             {
                 response = LLM_Config.ResponsePrefix + response;
                 LLMChatLogger::Log(2, "Sending final response: " + response);
-                
-                // Use a more visible method for all chat types
-                WorldPacket data(SMSG_MESSAGECHAT, 200);
-                data << uint8(CHAT_MSG_RAID_BOSS_EMOTE);  // More visible chat type
-                data << uint32(LANG_UNIVERSAL);
-                ObjectGuid guid = player->GetGUID();
-                data << guid;
-                data << uint32(0);                      // Flags
-                data << guid;                           // Target GUID
-                data << uint32(response.length() + 1);  // Message length
-                data << response;                       // Message
-                data << uint8(0);                       // Chat Tag
 
-                // Send to all nearby players
-                player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
-                LLMChatLogger::Log(2, "Sent range message");
-                
-                // Also send as system message to ensure visibility
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FFFF%s|r", response.c_str());
-                LLMChatLogger::Log(2, "Sent system message");
+                switch (type)
+                {
+                    case CHAT_MSG_SAY:
+                    {
+                        // Local chat - use range-based response
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_SAY);  // Use normal SAY instead of monster say
+                        data << uint32(LANG_UNIVERSAL);
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;  // Source GUID
+                        data << uint32(0);  // Chat flags
+                        data << guid;  // Target GUID (same as source for say)
+                        data << uint32(response.length() + 1);
+                        data << response;
+                        data << uint8(0);  // Chat tag
+
+                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange, true);
+                        LLMChatLogger::Log(2, "Sent local say response");
+                        break;
+                    }
+                    case CHAT_MSG_YELL:
+                    {
+                        // Yell chat - use extended range
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_YELL);  // Use normal YELL instead of monster yell
+                        data << uint32(LANG_UNIVERSAL);
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;
+                        data << uint32(0);
+                        data << guid;
+                        data << uint32(response.length() + 1);
+                        data << response;
+                        data << uint8(0);
+
+                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
+                        LLMChatLogger::Log(2, "Sent yell response");
+                        break;
+                    }
+                    case CHAT_MSG_PARTY:
+                    case CHAT_MSG_PARTY_LEADER:
+                    {
+                        // Party chat - send to all party members
+                        if (Group* group = player->GetGroup())
+                        {
+                            WorldPacket data(SMSG_MESSAGECHAT, 200);
+                            data << uint8(type);  // Keep original party chat type
+                            data << uint32(LANG_UNIVERSAL);
+                            ObjectGuid guid = player->GetGUID();
+                            data << guid;
+                            data << uint32(0);
+                            data << guid;
+                            data << uint32(response.length() + 1);
+                            data << response;
+                            data << uint8(0);
+
+                            group->BroadcastPacket(&data, false);
+                            LLMChatLogger::Log(2, "Sent party response");
+                        }
+                        break;
+                    }
+                    case CHAT_MSG_GUILD:
+                    case CHAT_MSG_OFFICER:
+                    {
+                        // Guild chat - send to all guild members
+                        if (Guild* guild = player->GetGuild())
+                        {
+                            WorldPacket data(SMSG_MESSAGECHAT, 200);
+                            data << uint8(type);  // Keep original guild chat type
+                            data << uint32(LANG_UNIVERSAL);
+                            ObjectGuid guid = player->GetGUID();
+                            data << guid;
+                            data << uint32(0);
+                            data << guid;
+                            data << uint32(response.length() + 1);
+                            data << response;
+                            data << uint8(0);
+
+                            guild->BroadcastPacket(&data);
+                            LLMChatLogger::Log(2, "Sent guild response");
+                        }
+                        break;
+                    }
+                    case CHAT_MSG_CHANNEL:
+                    {
+                        // Channel chat - respond in the same channel
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeam()))
+                        {
+                            // Get the channel name from the message
+                            std::string channelName = "Trade"; // Default to trade
+                            if (Channel* chn = cMgr->GetChannel(channelName, player))
+                            {
+                                WorldPacket data(SMSG_MESSAGECHAT, 200);
+                                data << uint8(CHAT_MSG_CHANNEL);
+                                data << uint32(LANG_UNIVERSAL);
+                                ObjectGuid guid = player->GetGUID();
+                                data << guid;
+                                data << uint32(0);
+                                data << channelName.c_str();  // Channel name
+                                data << guid;
+                                data << uint32(response.length() + 1);
+                                data << response;
+                                data << uint8(0);
+
+                                chn->SendToAll(&data);
+                                LLMChatLogger::Log(2, "Sent channel response to " + channelName);
+                            }
+                        }
+                        break;
+                    }
+                    case CHAT_MSG_WHISPER:
+                    {
+                        // Whisper - respond directly to the player
+                        WorldPacket data(SMSG_MESSAGECHAT, 200);
+                        data << uint8(CHAT_MSG_WHISPER);
+                        data << uint32(LANG_UNIVERSAL);
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;
+                        data << uint32(0);
+                        data << guid;
+                        data << uint32(response.length() + 1);
+                        data << response;
+                        data << uint8(0);
+                        player->GetSession()->SendPacket(&data);
+                        LLMChatLogger::Log(2, "Sent whisper response");
+                        break;
+                    }
+                }
                 
                 // Log the interaction
                 LLMChatLogger::LogChat(player->GetName(), msg, response);
@@ -161,16 +264,20 @@ namespace {
         std::string ParseLLMResponse(std::string const& rawResponse)
         {
             try {
-                LLMChatLogger::Log(2, "Raw response from Ollama: " + rawResponse);
+                LOG_INFO("module.llm_chat", "Parsing API Response...");
                 json response = json::parse(rawResponse);
                 
                 // Check if this is a streaming response
                 if (response.contains("done")) {
+                    LOG_INFO("module.llm_chat", "Found streaming response");
                     // This is a streaming response
                     if (response["done"].get<bool>()) {
                         // This is the final response in the stream
-                        return response["response"].get<std::string>();
+                        std::string result = response["response"].get<std::string>();
+                        LOG_INFO("module.llm_chat", "Final stream response: %s", result.c_str());
+                        return result;
                     }
+                    LOG_INFO("module.llm_chat", "Partial stream response - ignoring");
                     // This is a partial response, ignore it
                     return "";
                 }
@@ -178,15 +285,15 @@ namespace {
                 // Non-streaming response
                 if (response.contains("response")) {
                     std::string aiResponse = response["response"].get<std::string>();
-                    LLMChatLogger::Log(2, "Parsed AI response: " + aiResponse);
+                    LOG_INFO("module.llm_chat", "Non-streaming response: %s", aiResponse.c_str());
                     return aiResponse;
                 }
                 
-                LLMChatLogger::Log(1, "Response missing 'response' field: " + rawResponse);
+                LOG_ERROR("module.llm_chat", "Response missing 'response' field: %s", rawResponse.c_str());
                 return "Error parsing LLM response";
             }
             catch (json::parse_error const& e) {
-                LLMChatLogger::Log(1, "Error parsing JSON response: " + std::string(e.what()));
+                LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
                 return "Error parsing response";
             }
         }
@@ -209,7 +316,10 @@ namespace {
                     }}
                 }).dump();
 
-                LLMChatLogger::Log(2, "Sending request to Ollama: " + jsonPayload);
+                LOG_INFO("module.llm_chat", "=== API Request ===");
+                LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+                LOG_INFO("module.llm_chat", "Input: %s", message.c_str());
+                LOG_INFO("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
 
                 // Set up the IO context
                 net::io_context ioc;
@@ -220,11 +330,11 @@ namespace {
 
                 // Look up the domain name
                 auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-                LLMChatLogger::Log(2, "Resolved host: " + LLM_Config.Host + ":" + LLM_Config.Port);
+                LOG_INFO("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
                 // Make the connection on the IP address we get from a lookup
                 stream.connect(results);
-                LLMChatLogger::Log(2, "Connected to Ollama");
+                LOG_INFO("module.llm_chat", "Connected to Ollama API");
 
                 // Set up an HTTP POST request message
                 http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -236,7 +346,7 @@ namespace {
 
                 // Send the HTTP request to the remote host
                 http::write(stream, req);
-                LLMChatLogger::Log(2, "Sent request to Ollama");
+                LOG_INFO("module.llm_chat", "Request sent to API");
 
                 // This buffer is used for reading and must be persisted
                 beast::flat_buffer buffer;
@@ -246,23 +356,26 @@ namespace {
 
                 // Receive the HTTP response
                 http::read(stream, buffer, res);
-                LLMChatLogger::Log(2, "Received response from Ollama");
+                LOG_INFO("module.llm_chat", "=== API Response ===");
+                LOG_INFO("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
+                LOG_INFO("module.llm_chat", "Raw Response: %s", res.body().c_str());
 
                 // Gracefully close the socket
                 beast::error_code ec;
                 stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
                 if (res.result() != http::status::ok) {
-                    LLMChatLogger::Log(1, "HTTP error: " + std::to_string(static_cast<int>(res.result())));
+                    LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
                     return "Error communicating with service";
                 }
 
                 std::string response = ParseLLMResponse(res.body());
-                LLMChatLogger::Log(2, "Final response to be sent: " + response);
+                LOG_INFO("module.llm_chat", "Final Processed Response: %s", response.c_str());
+                LOG_INFO("module.llm_chat", "=== End API Transaction ===\n");
                 return response;
             }
             catch (std::exception const& e) {
-                LLMChatLogger::Log(1, "Error in HTTP request: " + std::string(e.what()));
+                LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
                 return "Error communicating with service";
             }
         }
@@ -294,7 +407,7 @@ public:
         LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
         LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
         LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:3b");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 2);
