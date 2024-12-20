@@ -413,14 +413,16 @@ Player* GetNearbyBot(Player* player, float maxDistance)
         return nullptr;
 
     // Get players in visibility range
-    player->UpdateVisibilityRange();
     float visibleRange = player->GetVisibilityRange();
     maxDistance = std::min(maxDistance, visibleRange);
 
-    // Use grid notifications to get nearby players
-    Cell::VisitWorldObjects(player, [&nearbyBots](Player* nearby) {
-        // Skip invalid players or those not in world
-        if (!nearby || !nearby->IsInWorld())
+    // Use grid search to get nearby players
+    player->GetMap()->VisitWorld(player->GetPositionX(), player->GetPositionY(), maxDistance, [&nearbyBots, player](WorldObject* obj) {
+        if (!obj || !obj->IsInWorld() || !obj->IsPlayer())
+            return;
+
+        Player* nearby = obj->ToPlayer();
+        if (!nearby || nearby == player)
             return;
 
         // Check if it's a playerbot
@@ -428,7 +430,7 @@ Player* GetNearbyBot(Player* player, float maxDistance)
         {
             nearbyBots.push_back(nearby);
         }
-    }, maxDistance);
+    });
 
     if (nearbyBots.empty())
         return nullptr;
