@@ -10,8 +10,8 @@
 #include "Chat.h"
 #include "World.h"
 #include "mod_llm_chat.h"
+#include "HttpClient.h"
 #include <nlohmann/json.hpp>
-#include <curl/curl.h>
 
 using json = nlohmann::json;
 
@@ -96,12 +96,6 @@ namespace {
         }
 
     private:
-        static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp)
-        {
-            userp->append((char*)contents, size * nmemb);
-            return size * nmemb;
-        }
-
         std::string ParseLLMResponse(std::string const& rawResponse)
         {
             try {
@@ -119,47 +113,35 @@ namespace {
 
         std::string QueryLLM(std::string const& message)
         {
-            CURL* curl = curl_easy_init();
-            if (!curl) {
-                LLMChatLogger::Log(1, "Failed to initialize CURL");
-                return "Error initializing service";
+            try {
+                std::string jsonPayload = json({
+                    {"model", LLM_Config.OllamaModel},
+                    {"messages", json::array({
+                        {
+                            {"role", "user"},
+                            {"content", message}
+                        }
+                    })}
+                }).dump();
+
+                HttpClient client;
+                HttpRequest request(LLM_Config.OllamaEndpoint);
+                request.SetHeader("Content-Type", "application/json");
+                request.SetPostData(jsonPayload);
+
+                HttpResponse response = client.SendRequest(request);
+
+                if (response.GetStatusCode() != 200) {
+                    LLMChatLogger::Log(1, "HTTP error: " + std::to_string(response.GetStatusCode()));
+                    return "Error communicating with service";
+                }
+
+                return ParseLLMResponse(response.GetBody());
             }
-
-            std::string response;
-            std::string jsonPayload = json({
-                {"model", LLM_Config.OllamaModel},
-                {"messages", json::array({
-                    {
-                        {"role", "user"},
-                        {"content", message}
-                    }
-                })}
-            }).dump();
-
-            curl_easy_setopt(curl, CURLOPT_URL, LLM_Config.OllamaEndpoint.c_str());
-            curl_easy_setopt(curl, CURLOPT_POST, 1L);
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonPayload.c_str());
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-
-            struct curl_slist* headers = nullptr;
-            headers = curl_slist_append(headers, "Content-Type: application/json");
-            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-            CURLcode res = curl_easy_perform(curl);
-
-            if (res != CURLE_OK) {
-                std::string errorMsg = curl_easy_strerror(res);
-                LLMChatLogger::Log(1, "CURL error: " + errorMsg);
-                curl_slist_free_all(headers);
-                curl_easy_cleanup(curl);
+            catch (std::exception const& e) {
+                LLMChatLogger::Log(1, "Error in HTTP request: " + std::string(e.what()));
                 return "Error communicating with service";
             }
-
-            curl_slist_free_all(headers);
-            curl_easy_cleanup(curl);
-
-            return ParseLLMResponse(response);
         }
     };
 }
