@@ -121,218 +121,36 @@ namespace {
 
         void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
         {
-            LOG_INFO("module.llm_chat", "OnChat triggered - Type: %u, Message: %s", type, msg.c_str());
-            
-            // Only process certain chat types
-            if (!LLM_Config.Enabled)
-            {
-                LOG_INFO("module.llm_chat", "Module is disabled");
+            if (!LLM_Config.Enabled || !player || msg.empty())
                 return;
-            }
-
-            // Check if this is a chat type we want to handle
-            bool validChatType = (type == CHAT_MSG_SAY || 
-                                type == CHAT_MSG_YELL || 
-                                type == CHAT_MSG_PARTY || 
-                                type == CHAT_MSG_PARTY_LEADER || 
-                                type == CHAT_MSG_GUILD || 
-                                type == CHAT_MSG_OFFICER || 
-                                type == CHAT_MSG_WHISPER || 
-                                type == CHAT_MSG_CHANNEL);
-
-            if (!validChatType)
-            {
-                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
-                return;
-            }
-
-            if (!player)
-            {
-                LOG_INFO("module.llm_chat", "No player object");
-                return;
-            }
-
-            if (msg.empty())
-            {
-                LOG_INFO("module.llm_chat", "Empty message");
-                return;
-            }
 
             // Ignore if player is a bot or not a real player
-            if (!player->GetSession())
-            {
-                LOG_INFO("module.llm_chat", "No player session");
+            if (!player->GetSession() || player->GetSession()->IsBot())
                 return;
-            }
 
-            if (player->GetSession()->IsBot())
+            LOG_INFO("module.llm_chat", "OnChat triggered - Type: %u, Message: %s", type, msg.c_str());
+
+            switch (type)
             {
-                LOG_INFO("module.llm_chat", "Player is a bot");
-                return;
-            }
-
-            // Log the incoming message with more detail
-            LOG_INFO("module.llm_chat", "\n=== New Chat Event ===");
-            LOG_INFO("module.llm_chat", "Player: %s", player->GetName().c_str());
-            LOG_INFO("module.llm_chat", "Chat Type: %u", type);
-            LOG_INFO("module.llm_chat", "Message: %s", msg.c_str());
-            LOG_INFO("module.llm_chat", "Language: %u", lang);
-            LOG_INFO("module.llm_chat", "Module Enabled: %s", LLM_Config.Enabled ? "true" : "false");
-            LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
-
-            // Get response from LLM
-            LOG_INFO("module.llm_chat", "Querying LLM API...");
-            std::string response = QueryLLM(msg);
-            LOG_INFO("module.llm_chat", "Raw LLM Response: %s", response.c_str());
-
-            // Check for invalid or empty responses
-            if (response.empty() || response.find("Error") != std::string::npos) {
-                response = "Sorry, I couldn't process your message.";
-                LOG_ERROR("module.llm_chat", "Error in LLM response: %s", response.c_str());
-            }
-
-            // Send response in chat
-            if (!response.empty())
-            {
-                response = LLM_Config.ResponsePrefix + response;
-                LOG_INFO("module.llm_chat", "Preparing to send response: %s", response.c_str());
-
-                switch (type)
-                {
-                    case CHAT_MSG_SAY:
-                    {
-                        // Local chat - use range-based response
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_SAY);  // Use normal SAY instead of monster say
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;  // Source GUID
-                        data << uint32(0);  // Chat flags
-                        data << guid;  // Target GUID (same as source for say)
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);  // Chat tag
-
-                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange, true);
-                        LLMChatLogger::Log(2, "Sent local say response");
-                        break;
-                    }
-                    case CHAT_MSG_YELL:
-                    {
-                        // Yell chat - use extended range
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_YELL);  // Use normal YELL instead of monster yell
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;
-                        data << uint32(0);
-                        data << guid;
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);
-
-                        player->SendMessageToSetInRange(&data, LLM_Config.ChatRange * 2, true);
-                        LLMChatLogger::Log(2, "Sent yell response");
-                        break;
-                    }
-                    case CHAT_MSG_PARTY:
-                    case CHAT_MSG_PARTY_LEADER:
-                    {
-                        // Party chat - send to all party members
-                        if (Group* group = player->GetGroup())
-                        {
-                            WorldPacket data(SMSG_MESSAGECHAT, 200);
-                            data << uint8(type);  // Keep original party chat type
-                            data << uint32(LANG_UNIVERSAL);
-                            ObjectGuid guid = player->GetGUID();
-                            data << guid;
-                            data << uint32(0);
-                            data << guid;
-                            data << uint32(response.length() + 1);
-                            data << response;
-                            data << uint8(0);
-
-                            group->BroadcastPacket(&data, false);
-                            LLMChatLogger::Log(2, "Sent party response");
-                        }
-                        break;
-                    }
-                    case CHAT_MSG_GUILD:
-                    case CHAT_MSG_OFFICER:
-                    {
-                        // Guild chat - send to all guild members
-                        if (Guild* guild = player->GetGuild())
-                        {
-                            WorldPacket data(SMSG_MESSAGECHAT, 200);
-                            data << uint8(type);  // Keep original guild chat type
-                            data << uint32(LANG_UNIVERSAL);
-                            ObjectGuid guid = player->GetGUID();
-                            data << guid;
-                            data << uint32(0);
-                            data << guid;
-                            data << uint32(response.length() + 1);
-                            data << response;
-                            data << uint8(0);
-
-                            guild->BroadcastPacket(&data);
-                            LLMChatLogger::Log(2, "Sent guild response");
-                        }
-                        break;
-                    }
-                    case CHAT_MSG_CHANNEL:
-                    {
-                        // Channel chat - respond in the same channel
-                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeamId()))
-                        {
-                            // Default to Trade channel if we can't determine the channel
-                            std::string channelName = "Trade";
-                            LOG_INFO("module.llm_chat", "Using channel: %s", channelName.c_str());
-
-                            if (Channel* chn = cMgr->GetChannel(channelName, player))
-                            {
-                                WorldPacket data(SMSG_MESSAGECHAT, 200);
-                                data << uint8(CHAT_MSG_CHANNEL);
-                                data << uint32(LANG_UNIVERSAL);
-                                ObjectGuid guid = player->GetGUID();
-                                data << guid;
-                                data << uint32(0);
-                                data << channelName.c_str();  // Channel name
-                                data << guid;
-                                data << uint32(response.length() + 1);
-                                data << response;
-                                data << uint8(0);
-
-                                chn->SendToAllButOne(&data, ObjectGuid::Empty);  // Send to everyone
-                                LOG_INFO("module.llm_chat", "Sent channel response to %s", channelName.c_str());
-                            }
-                            else
-                            {
-                                LOG_ERROR("module.llm_chat", "Could not find channel: %s", channelName.c_str());
-                            }
-                        }
-                        break;
-                    }
-                    case CHAT_MSG_WHISPER:
-                    {
-                        // Whisper - respond directly to the player
-                        WorldPacket data(SMSG_MESSAGECHAT, 200);
-                        data << uint8(CHAT_MSG_WHISPER);
-                        data << uint32(LANG_UNIVERSAL);
-                        ObjectGuid guid = player->GetGUID();
-                        data << guid;
-                        data << uint32(0);
-                        data << guid;
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);
-                        player->GetSession()->SendPacket(&data);
-                        LLMChatLogger::Log(2, "Sent whisper response");
-                        break;
-                    }
-                }
-                
-                // Log the interaction
-                LLMChatLogger::LogChat(player->GetName(), msg, response);
+                case CHAT_MSG_SAY:
+                case CHAT_MSG_YELL:
+                case CHAT_MSG_PARTY:
+                case CHAT_MSG_PARTY_LEADER:
+                case CHAT_MSG_GUILD:
+                case CHAT_MSG_OFFICER:
+                case CHAT_MSG_RAID:
+                case CHAT_MSG_RAID_LEADER:
+                case CHAT_MSG_RAID_WARNING:
+                case CHAT_MSG_BATTLEGROUND:
+                case CHAT_MSG_BATTLEGROUND_LEADER:
+                case CHAT_MSG_CHANNEL:
+                    SendAIResponse(player, msg, -1);
+                    break;
+                case CHAT_MSG_WHISPER:
+                    SendAIResponse(player, msg, player->GetTeamId());
+                    break;
+                default:
+                    break;
             }
         }
 
@@ -503,6 +321,57 @@ public:
         LOG_INFO("module.llm_chat", "=== End Configuration ===\n");
     }
 };
+
+void SendAIResponse(Player* sender, const std::string& msg, int team = -1)
+{
+    if (!LLM_Config.Enabled)
+    {
+        ChatHandler(sender->GetSession()).PSendSysMessage("LLM Chat is disabled.");
+        return;
+    }
+
+    if (!sender->CanSpeak())
+    {
+        ChatHandler(sender->GetSession()).PSendSysMessage("You can't use LLM Chat while muted!");
+        return;
+    }
+
+    std::string response = QueryLLM(msg);
+    if (response.empty() || response.find("Error") != std::string::npos)
+    {
+        response = "Sorry, I couldn't process your message.";
+    }
+
+    response = LLM_Config.ResponsePrefix + response;
+
+    SessionMap sessions = sWorld->GetAllSessions();
+    for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+    {
+        if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
+            continue;
+
+        Player* target = itr->second->GetPlayer();
+
+        // Check team if specified
+        if (team != -1 && target->GetTeamId() != team)
+            continue;
+
+        // Check range for local chat types
+        if ((msg.find("/s") == 0 || msg.find("/y") == 0) && 
+            target->GetDistance(sender) > LLM_Config.ChatRange)
+            continue;
+
+        std::string message = Acore::StringFormat("[AI][%s]: %s", 
+            sender->GetName().c_str(), 
+            response.c_str());
+
+        ChatHandler(target->GetSession()).PSendSysMessage("%s", message.c_str());
+    }
+
+    // Log the interaction
+    LOG_INFO("module.llm_chat", "Player: %s, Input: %s", sender->GetName().c_str(), msg.c_str());
+    LOG_INFO("module.llm_chat", "AI Response: %s", response.c_str());
+}
 
 void Add_LLMChatScripts()
 {
