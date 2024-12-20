@@ -28,6 +28,8 @@ using json = nlohmann::json;
 
 // Forward declarations
 void SendAIResponse(Player* sender, const std::string& msg, int team = -1);
+std::string QueryLLM(std::string const& message);
+std::string ParseLLMResponse(std::string const& rawResponse);
 
 namespace {
     /* Config Variables */
