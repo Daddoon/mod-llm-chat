@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "Chat.h"
 #include "World.h"
+#include "Channel.h"
 #include "mod_llm_chat.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -169,14 +170,8 @@ namespace {
                     }
                     case CHAT_MSG_CHANNEL:
                     {
-                        // For channels, send to the player's current channel
-                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeam()))
-                        {
-                            if (Channel* chn = cMgr->GetChannel("Trade", player))
-                            {
-                                chn->Say(player->GetGUID(), response.c_str(), LANG_UNIVERSAL);
-                            }
-                        }
+                        // For channels, use system message instead
+                        ChatHandler(player->GetSession()).PSendSysMessage("%s", response.c_str());
                         break;
                     }
                     case CHAT_MSG_WHISPER:
