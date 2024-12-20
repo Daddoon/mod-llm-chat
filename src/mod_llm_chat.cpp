@@ -10,9 +10,17 @@
 #include "Chat.h"
 #include "World.h"
 #include "mod_llm_chat.h"
-#include "HttpClient.h"
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/version.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <nlohmann/json.hpp>
 
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
 namespace {
@@ -26,6 +34,10 @@ namespace {
         float ChatRange;
         std::string ResponsePrefix;
         int32 LogLevel;
+        // Add host and port for proper URL parsing
+        std::string Host;
+        std::string Port;
+        std::string Target;
     };
 
     LLMConfig LLM_Config;
@@ -44,6 +56,24 @@ namespace {
             LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLM.ChatRange", 25.0f);
             LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLM.ResponsePrefix", "[AI] ");
             LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLM.LogLevel", 2);
+
+            // Parse endpoint URL
+            size_t protocolEnd = LLM_Config.OllamaEndpoint.find("://");
+            if (protocolEnd != std::string::npos) {
+                std::string url = LLM_Config.OllamaEndpoint.substr(protocolEnd + 3);
+                size_t pathStart = url.find('/');
+                std::string hostPort = url.substr(0, pathStart);
+                LLM_Config.Target = url.substr(pathStart);
+
+                size_t portStart = hostPort.find(':');
+                if (portStart != std::string::npos) {
+                    LLM_Config.Host = hostPort.substr(0, portStart);
+                    LLM_Config.Port = hostPort.substr(portStart + 1);
+                } else {
+                    LLM_Config.Host = hostPort;
+                    LLM_Config.Port = "80";
+                }
+            }
         }
     };
 
@@ -124,19 +154,49 @@ namespace {
                     })}
                 }).dump();
 
-                HttpClient client;
-                HttpRequest request(LLM_Config.OllamaEndpoint);
-                request.SetHeader("Content-Type", "application/json");
-                request.SetPostData(jsonPayload);
+                // Set up the IO context
+                net::io_context ioc;
 
-                HttpResponse response = client.SendRequest(request);
+                // These objects perform our I/O
+                tcp::resolver resolver(ioc);
+                beast::tcp_stream stream(ioc);
 
-                if (response.GetStatusCode() != 200) {
-                    LLMChatLogger::Log(1, "HTTP error: " + std::to_string(response.GetStatusCode()));
+                // Look up the domain name
+                auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
+
+                // Make the connection on the IP address we get from a lookup
+                stream.connect(results);
+
+                // Set up an HTTP POST request message
+                http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
+                req.set(http::field::host, LLM_Config.Host);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                req.set(http::field::content_type, "application/json");
+                req.body() = jsonPayload;
+                req.prepare_payload();
+
+                // Send the HTTP request to the remote host
+                http::write(stream, req);
+
+                // This buffer is used for reading and must be persisted
+                beast::flat_buffer buffer;
+
+                // Declare a container to hold the response
+                http::response<http::string_body> res;
+
+                // Receive the HTTP response
+                http::read(stream, buffer, res);
+
+                // Gracefully close the socket
+                beast::error_code ec;
+                stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+
+                if (res.result() != http::status::ok) {
+                    LLMChatLogger::Log(1, "HTTP error: " + std::to_string(static_cast<int>(res.result())));
                     return "Error communicating with service";
                 }
 
-                return ParseLLMResponse(response.GetBody());
+                return ParseLLMResponse(res.body());
             }
             catch (std::exception const& e) {
                 LLMChatLogger::Log(1, "Error in HTTP request: " + std::string(e.what()));
