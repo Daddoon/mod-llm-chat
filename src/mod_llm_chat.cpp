@@ -138,9 +138,10 @@ namespace {
                         WorldPacket data(SMSG_MESSAGECHAT, 200);
                         data << uint8(CHAT_MSG_MONSTER_SAY);
                         data << uint32(LANG_UNIVERSAL);
-                        data << uint64(player->GetGUID());
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;
                         data << uint32(0);                      // Flags
-                        data << uint64(player->GetGUID());      // Target GUID
+                        data << guid;                           // Target GUID
                         data << uint32(response.length() + 1);  // Message length
                         data << response;                       // Message
                         data << uint8(0);                       // Chat Tag
@@ -155,9 +156,10 @@ namespace {
                         WorldPacket data(SMSG_MESSAGECHAT, 200);
                         data << uint8(CHAT_MSG_MONSTER_YELL);
                         data << uint32(LANG_UNIVERSAL);
-                        data << uint64(player->GetGUID());
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;
                         data << uint32(0);
-                        data << uint64(player->GetGUID());
+                        data << guid;
                         data << uint32(response.length() + 1);
                         data << response;
                         data << uint8(0);
@@ -183,9 +185,10 @@ namespace {
                         WorldPacket data(SMSG_MESSAGECHAT, 200);
                         data << uint8(CHAT_MSG_WHISPER);
                         data << uint32(LANG_UNIVERSAL);
-                        data << uint64(player->GetGUID());
+                        ObjectGuid guid = player->GetGUID();
+                        data << guid;
                         data << uint32(0);
-                        data << uint64(player->GetGUID());
+                        data << guid;
                         data << uint32(response.length() + 1);
                         data << response;
                         data << uint8(0);
