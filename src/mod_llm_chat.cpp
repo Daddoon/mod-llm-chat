@@ -105,20 +105,20 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
 std::string ParseLLMResponse(std::string const& rawResponse)
 {
     try {
-        LOG_INFO("module.llm_chat", "Parsing API Response...");
+        LOG_INFO("module.llm_chat", "%s", "Parsing API Response...");
         json response = json::parse(rawResponse);
         
         // Check if this is a streaming response
         if (response.contains("done")) {
-            LOG_INFO("module.llm_chat", "Found streaming response");
+            LOG_INFO("module.llm_chat", "%s", "Found streaming response");
             // This is a streaming response
             if (response["done"].get<bool>()) {
                 // This is the final response in the stream
                 std::string result = response["response"].get<std::string>();
-                LOG_INFO("module.llm_chat", "Final stream response: %s", result.c_str());
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final stream response: %s", result.c_str()).c_str());
                 return result;
             }
-            LOG_INFO("module.llm_chat", "Partial stream response - ignoring");
+            LOG_INFO("module.llm_chat", "%s", "Partial stream response - ignoring");
             // This is a partial response, ignore it
             return "";
         }
@@ -126,15 +126,15 @@ std::string ParseLLMResponse(std::string const& rawResponse)
         // Non-streaming response
         if (response.contains("response")) {
             std::string aiResponse = response["response"].get<std::string>();
-            LOG_INFO("module.llm_chat", "Non-streaming response: %s", aiResponse.c_str());
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Non-streaming response: %s", aiResponse.c_str()).c_str());
             return aiResponse;
         }
         
-        LOG_ERROR("module.llm_chat", "Response missing 'response' field: %s", rawResponse.c_str());
+        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Response missing 'response' field: %s", rawResponse.c_str()).c_str());
         return "Error parsing LLM response";
     }
     catch (json::parse_error const& e) {
-        LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
+        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("JSON parse error: %s", e.what()).c_str());
         return "Error parsing response";
     }
 }
@@ -157,10 +157,10 @@ std::string QueryLLM(std::string const& message)
             }}
         }).dump();
 
-        LOG_INFO("module.llm_chat", "=== API Request ===");
-        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-        LOG_INFO("module.llm_chat", "Input: %s", message.c_str());
-        LOG_INFO("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
+        LOG_INFO("module.llm_chat", "%s", "=== API Request ===");
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Model: %s", LLM_Config.OllamaModel.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Input: %s", message.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Full Request: %s", jsonPayload.c_str()).c_str());
 
         // Set up the IO context
         net::io_context ioc;
@@ -171,11 +171,11 @@ std::string QueryLLM(std::string const& message)
 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_INFO("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str()).c_str());
 
         // Make the connection on the IP address we get from a lookup
         stream.connect(results);
-        LOG_INFO("module.llm_chat", "Connected to Ollama API");
+        LOG_INFO("module.llm_chat", "%s", "Connected to Ollama API");
 
         // Set up an HTTP POST request message
         http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -187,7 +187,7 @@ std::string QueryLLM(std::string const& message)
 
         // Send the HTTP request to the remote host
         http::write(stream, req);
-        LOG_INFO("module.llm_chat", "Request sent to API");
+        LOG_INFO("module.llm_chat", "%s", "Request sent to API");
 
         // This buffer is used for reading and must be persisted
         beast::flat_buffer buffer;
@@ -197,26 +197,26 @@ std::string QueryLLM(std::string const& message)
 
         // Receive the HTTP response
         http::read(stream, buffer, res);
-        LOG_INFO("module.llm_chat", "=== API Response ===");
-        LOG_INFO("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
-        LOG_INFO("module.llm_chat", "Raw Response: %s", res.body().c_str());
+        LOG_INFO("module.llm_chat", "%s", "=== API Response ===");
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Status: %d", static_cast<int>(res.result())).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Raw Response: %s", res.body().c_str()).c_str());
 
         // Gracefully close the socket
         beast::error_code ec;
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
         if (res.result() != http::status::ok) {
-            LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
+            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error: %d", static_cast<int>(res.result())).c_str());
             return "Error communicating with service";
         }
 
         std::string response = ParseLLMResponse(res.body());
-        LOG_INFO("module.llm_chat", "Final Processed Response: %s", response.c_str());
-        LOG_INFO("module.llm_chat", "=== End API Transaction ===\n");
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final Processed Response: %s", response.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", "=== End API Transaction ===\n");
         return response;
     }
     catch (std::exception const& e) {
-        LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
+        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("API Error: %s", e.what()).c_str());
         return "Error communicating with service";
     }
 }
@@ -231,8 +231,8 @@ public:
 
     static void LogChat(std::string const& playerName, std::string const& input, std::string const& response) {
         if (LLM_Config.LogLevel >= 2) {
-            LOG_INFO("module.llm_chat", "Player: %s, Input: %s", playerName.c_str(), input.c_str());
-            LOG_INFO("module.llm_chat", "AI Response: %s", response.c_str());
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Player: %s, Input: %s", playerName.c_str(), input.c_str()).c_str());
+            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("AI Response: %s", response.c_str()).c_str());
         }
     }
 };
@@ -354,16 +354,16 @@ public:
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
 
         // Log the loaded configuration
-        LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
-        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
-        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
-        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
-        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
-        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
-        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
-        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
-        LOG_INFO("module.llm_chat", "=== End Configuration ===\n");
+        LOG_INFO("module.llm_chat", "%s", "=== LLM Chat Configuration ===");
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Enabled: %s", LLM_Config.Enabled ? "true" : "false").c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Provider: %d", LLM_Config.Provider).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Endpoint: %s", LLM_Config.OllamaEndpoint.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Model: %s", LLM_Config.OllamaModel.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Host: %s", LLM_Config.Host.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Port: %s", LLM_Config.Port.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Target: %s", LLM_Config.Target.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Log Level: %d", LLM_Config.LogLevel).c_str());
+        LOG_INFO("module.llm_chat", "%s", "=== End Configuration ===\n");
     }
 };
 
