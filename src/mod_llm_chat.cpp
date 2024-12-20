@@ -55,14 +55,14 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
     try {
         size_t protocolEnd = endpoint.find("://");
         if (protocolEnd == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no protocol): %s", endpoint.c_str());
+            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid endpoint URL (no protocol): %s", endpoint.c_str()).c_str());
             return;
         }
 
         std::string url = endpoint.substr(protocolEnd + 3);
         size_t pathStart = url.find('/');
         if (pathStart == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no path): %s", endpoint.c_str());
+            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid endpoint URL (no path): %s", endpoint.c_str()).c_str());
             return;
         }
 
@@ -78,11 +78,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             try {
                 int port = std::stoi(config.Port);
                 if (port <= 0 || port > 65535) {
-                    LOG_ERROR("module.llm_chat", "Invalid port number: %s", config.Port.c_str());
+                    LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid port number: %s", config.Port.c_str()).c_str());
                     config.Port = "11434"; // Default to Ollama port
                 }
             } catch (std::exception const& e) {
-                LOG_ERROR("module.llm_chat", "Invalid port format: %s", e.what());
+                LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid port format: %s", e.what()).c_str());
                 config.Port = "11434"; // Default to Ollama port
             }
         } else {
@@ -90,11 +90,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             config.Port = "11434"; // Default to Ollama port
         }
 
-        LOG_INFO("module.llm_chat", "URL parsed successfully - Host: %s, Port: %s, Target: %s", 
-                config.Host.c_str(), config.Port.c_str(), config.Target.c_str());
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("URL parsed successfully - Host: %s, Port: %s, Target: %s", 
+                config.Host.c_str(), config.Port.c_str(), config.Target.c_str()).c_str());
     }
     catch (std::exception const& e) {
-        LOG_ERROR("module.llm_chat", "Error parsing URL: %s", e.what());
+        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Error parsing URL: %s", e.what()).c_str());
         // Set defaults
         config.Host = "localhost";
         config.Port = "11434";
