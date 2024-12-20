@@ -271,20 +271,28 @@ public:
             return;
         }
 
+        // Check if message is from a bot
+        bool isBot = player->GetSession() && player->GetSession()->IsBot();
+        
         // Log the raw chat message
-        std::string logMessage = Acore::StringFormat("Chat received from player '%s' (Type: %u): '%s'", 
+        std::string logMessage = Acore::StringFormat("Chat received from %s '%s' (Type: %u): '%s'", 
+            isBot ? "bot" : "player",
             player->GetName().c_str(), 
             type, 
             msg.c_str());
         LOG_INFO("module.llm_chat", "%s", logMessage.c_str());
 
-        // Check if message is from a bot
-        bool isBot = player->GetSession() && player->GetSession()->IsBot();
-        
-        // If it's a bot message, only respond if it's not an AI response (to avoid loops)
-        if (isBot && msg.find(LLM_Config.ResponsePrefix) == 0)
+        // Only process messages from bots
+        if (!isBot)
         {
-            LOG_INFO("module.llm_chat", "Ignoring bot AI response to prevent loops");
+            LOG_INFO("module.llm_chat", "Ignoring message from real player '%s'", player->GetName().c_str());
+            return;
+        }
+
+        // Prevent response loops by checking for AI prefix
+        if (msg.find(LLM_Config.ResponsePrefix) == 0)
+        {
+            LOG_INFO("module.llm_chat", "Ignoring AI response to prevent loops");
             return;
         }
 
@@ -293,74 +301,48 @@ public:
         {
             case CHAT_MSG_SAY:
             {
-                std::string processLog = Acore::StringFormat("Processing SAY command from '%s' (Bot: %s): '%s'", 
+                std::string processLog = Acore::StringFormat("Processing SAY command from bot '%s': '%s'", 
                     player->GetName().c_str(),
-                    isBot ? "yes" : "no", 
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                
-                // Only respond if it's a player message or a non-AI bot message
-                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
-                {
-                    SendAIResponse(player, msg, -1, CHAT_MSG_SAY);
-                }
+                SendAIResponse(player, msg, -1, CHAT_MSG_SAY);
                 break;
             }
             case CHAT_MSG_YELL:
             {
-                std::string processLog = Acore::StringFormat("Processing YELL command from '%s' (Bot: %s): '%s'", 
+                std::string processLog = Acore::StringFormat("Processing YELL command from bot '%s': '%s'", 
                     player->GetName().c_str(),
-                    isBot ? "yes" : "no", 
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                
-                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
-                {
-                    SendAIResponse(player, msg, -1, CHAT_MSG_YELL);
-                }
+                SendAIResponse(player, msg, -1, CHAT_MSG_YELL);
                 break;
             }
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
             {
-                std::string processLog = Acore::StringFormat("Processing PARTY command from '%s' (Bot: %s): '%s'", 
+                std::string processLog = Acore::StringFormat("Processing PARTY command from bot '%s': '%s'", 
                     player->GetName().c_str(),
-                    isBot ? "yes" : "no", 
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                
-                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
-                {
-                    SendAIResponse(player, msg, -1, CHAT_MSG_PARTY);
-                }
+                SendAIResponse(player, msg, -1, CHAT_MSG_PARTY);
                 break;
             }
             case CHAT_MSG_GUILD:
             {
-                std::string processLog = Acore::StringFormat("Processing GUILD command from '%s' (Bot: %s): '%s'", 
+                std::string processLog = Acore::StringFormat("Processing GUILD command from bot '%s': '%s'", 
                     player->GetName().c_str(),
-                    isBot ? "yes" : "no", 
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                
-                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
-                {
-                    SendAIResponse(player, msg, -1, CHAT_MSG_GUILD);
-                }
+                SendAIResponse(player, msg, -1, CHAT_MSG_GUILD);
                 break;
             }
             case CHAT_MSG_WHISPER:
             {
-                std::string processLog = Acore::StringFormat("Processing WHISPER command from '%s' (Bot: %s): '%s'", 
+                std::string processLog = Acore::StringFormat("Processing WHISPER command from bot '%s': '%s'", 
                     player->GetName().c_str(),
-                    isBot ? "yes" : "no", 
                     msg.c_str());
                 LOG_INFO("module.llm_chat", "%s", processLog.c_str());
-                
-                if (!isBot || msg.find(LLM_Config.ResponsePrefix) != 0)
-                {
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_WHISPER);
-                }
+                SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_WHISPER);
                 break;
             }
             default:
@@ -430,138 +412,109 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     {
         std::string disabledLog = Acore::StringFormat("Module is disabled for player '%s'", sender->GetName().c_str());
         LOG_INFO("module.llm_chat", "%s", disabledLog.c_str());
-        ChatHandler(sender->GetSession()).PSendSysMessage("LLM Chat is disabled.");
         return;
     }
 
-    if (!sender->CanSpeak())
-    {
-        std::string muteLog = Acore::StringFormat("Player '%s' cannot speak", sender->GetName().c_str());
-        LOG_INFO("module.llm_chat", "%s", muteLog.c_str());
-        ChatHandler(sender->GetSession()).PSendSysMessage("You can't use LLM Chat while muted!");
-        return;
-    }
-
-    std::string queryLog = Acore::StringFormat("Querying LLM for player '%s' with message: '%s'", 
-        sender->GetName().c_str(), 
-        msg.c_str());
-    LOG_INFO("module.llm_chat", "%s", queryLog.c_str());
-
-    std::string response = QueryLLM(msg);
-    std::string responseLog = Acore::StringFormat("Got LLM response for '%s': '%s'", 
-        sender->GetName().c_str(), 
-        response.c_str());
-    LOG_INFO("module.llm_chat", "%s", responseLog.c_str());
-
-    if (response.empty() || response.find("Error") != std::string::npos)
-    {
-        std::string errorLog = Acore::StringFormat("Error in LLM response for '%s'", sender->GetName().c_str());
-        LOG_INFO("module.llm_chat", "%s", errorLog.c_str());
-        response = "Sorry, I couldn't process your message.";
-    }
-
-    response = LLM_Config.ResponsePrefix + response;
-    std::string finalLog = Acore::StringFormat("Final response for '%s': '%s'", 
-        sender->GetName().c_str(), 
-        response.c_str());
-    LOG_INFO("module.llm_chat", "%s", finalLog.c_str());
-
-    // Use the original chat type for the response
-    uint32 responseType = originalChatType;
-    std::string typeLog = Acore::StringFormat("Sending response using chat type: %u", responseType);
-    LOG_INFO("module.llm_chat", "%s", typeLog.c_str());
-
+    // Get all sessions to find a playerbot to respond
     SessionMap sessions = sWorld->GetAllSessions();
+    std::vector<Player*> availableBots;
+
+    // Find all eligible bots
     for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
     {
         if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
             continue;
 
-        Player* target = itr->second->GetPlayer();
-        std::string targetLog = Acore::StringFormat("Checking player '%s' for message delivery", target->GetName().c_str());
-        LOG_INFO("module.llm_chat", "%s", targetLog.c_str());
-
-        // Check team if specified
-        if (team != -1 && target->GetTeamId() != team)
+        Player* potentialBot = itr->second->GetPlayer();
+        
+        // Check if it's a bot
+        if (potentialBot->GetSession() && potentialBot->GetSession()->IsBot())
         {
-            std::string skipLog = Acore::StringFormat("Skipping player '%s' - wrong team", target->GetName().c_str());
-            LOG_INFO("module.llm_chat", "%s", skipLog.c_str());
-            continue;
-        }
-
-        // Check range for local chat types
-        if ((responseType == CHAT_MSG_SAY || responseType == CHAT_MSG_YELL) && 
-            target->GetDistance(sender) > LLM_Config.ChatRange)
-        {
-            std::string rangeLog = Acore::StringFormat("Skipping player '%s' - out of range", target->GetName().c_str());
-            LOG_INFO("module.llm_chat", "%s", rangeLog.c_str());
-            continue;
-        }
-
-        WorldPacket data;
-        bool shouldSend = true;
-
-        switch (responseType)
-        {
-            case CHAT_MSG_WHISPER:
-                ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, sender, target, response);
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built whisper packet from '%s' to '%s'", 
-                    sender->GetName().c_str(), 
-                    target->GetName().c_str()).c_str());
-                break;
-
-            case CHAT_MSG_SAY:
-            case CHAT_MSG_YELL:
-                ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, response);
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built say/yell packet from '%s'", 
-                    sender->GetName().c_str()).c_str());
-                break;
-
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                if (target->GetGroup() && target->GetGroup() == sender->GetGroup())
-                {
-                    ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(responseType), LANG_UNIVERSAL, sender, nullptr, response);
-                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built party packet from '%s'", 
-                        sender->GetName().c_str()).c_str());
-                }
-                else
-                {
-                    shouldSend = false;
-                }
-                break;
-
-            case CHAT_MSG_GUILD:
-                if (target->GetGuild() && target->GetGuild() == sender->GetGuild())
-                {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, sender, nullptr, response);
-                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Built guild packet from '%s'", 
-                        sender->GetName().c_str()).c_str());
-                }
-                else
-                {
-                    shouldSend = false;
-                }
-                break;
-
-            default:
-                ChatHandler(target->GetSession()).PSendSysMessage("[AI] %s: %s", sender->GetName().c_str(), response.c_str());
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sent system message from '%s'", 
-                    sender->GetName().c_str()).c_str());
-                shouldSend = false;
-                break;
-        }
-
-        if (shouldSend)
-        {
-            target->SendDirectMessage(&data);
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Sent message to '%s'", 
-                target->GetName().c_str()).c_str());
+            // For local chat types, check range
+            if ((originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL) && 
+                potentialBot->GetDistance(sender) <= LLM_Config.ChatRange)
+            {
+                availableBots.push_back(potentialBot);
+            }
+            // For other chat types, just add to available bots
+            else if (originalChatType != CHAT_MSG_SAY && originalChatType != CHAT_MSG_YELL)
+            {
+                availableBots.push_back(potentialBot);
+            }
         }
     }
 
-    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Finished sending AI response for '%s'\n", 
-        sender->GetName().c_str()).c_str());
+    // If no bots available, log and return
+    if (availableBots.empty())
+    {
+        LOG_INFO("module.llm_chat", "No eligible bots found to respond");
+        return;
+    }
+
+    // Select a random bot to respond
+    uint32 randomIndex = urand(0, availableBots.size() - 1);
+    Player* respondingBot = availableBots[randomIndex];
+
+    LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
+
+    // Get AI response
+    std::string response = QueryLLM(msg);
+    if (response.empty() || response.find("Error") != std::string::npos)
+    {
+        LOG_INFO("module.llm_chat", "Error getting LLM response");
+        return;
+    }
+
+    // Remove AI prefix if present (since bot will be speaking directly)
+    if (response.find(LLM_Config.ResponsePrefix) == 0)
+    {
+        response = response.substr(LLM_Config.ResponsePrefix.length());
+    }
+
+    // Have the bot send the message
+    switch (originalChatType)
+    {
+        case CHAT_MSG_SAY:
+            respondingBot->Say(response, LANG_UNIVERSAL);
+            LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
+            break;
+            
+        case CHAT_MSG_YELL:
+            respondingBot->Yell(response, LANG_UNIVERSAL);
+            LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
+            break;
+            
+        case CHAT_MSG_PARTY:
+        case CHAT_MSG_PARTY_LEADER:
+            if (respondingBot->GetGroup() && respondingBot->GetGroup() == sender->GetGroup())
+            {
+                WorldPacket data;
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                respondingBot->GetGroup()->BroadcastPacket(&data, false);
+                LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
+            }
+            break;
+            
+        case CHAT_MSG_GUILD:
+            if (respondingBot->GetGuild() && respondingBot->GetGuild() == sender->GetGuild())
+            {
+                respondingBot->GetGuild()->BroadcastToGuild(respondingBot->GetSession(), false, response, LANG_UNIVERSAL);
+                LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
+            }
+            break;
+            
+        case CHAT_MSG_WHISPER:
+            ChatHandler(sender->GetSession()).PSendSysMessage("%s whispers: %s", respondingBot->GetName().c_str(), response.c_str());
+            LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
+            break;
+            
+        default:
+            ChatHandler(sender->GetSession()).PSendSysMessage("%s: %s", respondingBot->GetName().c_str(), response.c_str());
+            LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
+            break;
+    }
+
+    LOG_INFO("module.llm_chat", "Finished sending bot response\n");
 }
 
 void Add_LLMChatScripts()
