@@ -28,6 +28,7 @@ LLMChat.Provider = 1
 #    LLMChat.Ollama.Endpoint
 #        Description: Endpoint URL for Ollama API
 #        Default:    "http://localhost:11434/api/generate"
+#        Note: Use /api/generate for standard responses
 
 LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
 
