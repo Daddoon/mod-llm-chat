@@ -421,10 +421,13 @@ public:
                 case CHAT_MSG_WHISPER:
                 {
                     // For whispers, we need to find the target player
-                    if (Player* target = ObjectAccessor::FindPlayer(player->GetSelection()))
+                    if (ObjectGuid targetGuid = player->GetTarget())
                     {
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
-                        target->GetSession()->SendPacket(&data);
+                        if (Player* target = ObjectAccessor::FindPlayer(targetGuid))
+                        {
+                            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                            target->GetSession()->SendPacket(&data);
+                        }
                     }
                     break;
                 }
