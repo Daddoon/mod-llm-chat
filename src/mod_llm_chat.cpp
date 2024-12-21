@@ -367,6 +367,9 @@ public:
             return;
         }
 
+        // Store the message for processing after it's sent
+        std::string message = msg;
+
         // Check if the message is from a bot and if we should allow bot-to-bot interactions
         bool isBot = player->GetSession() && player->GetSession()->IsBot();
         static const float BOT_RESPONSE_CHANCE = 0.5f; // 50% chance for bots to respond to other bots
@@ -377,37 +380,42 @@ public:
             return;
         }
 
-        // Log the raw chat message first
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s (Bot: %s), Type: %u, Message: %s", 
-            player->GetName().c_str(), 
-            isBot ? "yes" : "no",
-            type, 
-            msg.c_str());
-
-        // Handle different chat types
-        switch (type)
+        // Schedule the AI response to be processed on the next server update
+        // This ensures the original message appears first
+        player->GetMap()->GetScheduler().Schedule(Milliseconds(100), [player, message, type, isBot](TaskContext /*context*/)
         {
-            case CHAT_MSG_SAY:
-            case CHAT_MSG_YELL:
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-            case CHAT_MSG_GUILD:
-            case CHAT_MSG_WHISPER:
-            case CHAT_MSG_CHANNEL:
+            // Log the raw chat message
+            LOG_INFO("module.llm_chat", "Chat received - Player: %s (Bot: %s), Type: %u, Message: %s", 
+                player->GetName().c_str(), 
+                isBot ? "yes" : "no",
+                type, 
+                message.c_str());
+
+            // Handle different chat types
+            switch (type)
             {
-                if (!msg.empty())
+                case CHAT_MSG_SAY:
+                case CHAT_MSG_YELL:
+                case CHAT_MSG_PARTY:
+                case CHAT_MSG_PARTY_LEADER:
+                case CHAT_MSG_GUILD:
+                case CHAT_MSG_WHISPER:
+                case CHAT_MSG_CHANNEL:
                 {
-                    LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
-                        GetChatTypeString(type).c_str(),
-                        player->GetName().c_str(), 
-                        msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), type);
+                    if (!message.empty())
+                    {
+                        LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
+                            GetChatTypeString(type).c_str(),
+                            player->GetName().c_str(), 
+                            message.c_str());
+                        SendAIResponse(player, message, player->GetTeamId(), type);
+                    }
+                    break;
                 }
-                break;
+                default:
+                    break;
             }
-            default:
-                break;
-        }
+        });
     }
 
     // Helper function to get chat type string
