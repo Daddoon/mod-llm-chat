@@ -34,6 +34,7 @@ using json = nlohmann::json;
 
 // Forward declarations
 void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 originalChatType);
+std::string QueryLLM(std::string const& message, const std::string& playerName);
 
 namespace {
     /* Config Variables */
@@ -235,27 +236,23 @@ std::string GetMoodBasedResponse(const std::string& tone) {
            "Be natural but always stay true to the World of Warcraft setting.";
 }
 
-std::string QueryLLM(std::string const& message)
+std::string QueryLLM(std::string const& message, const std::string& playerName)
 {
     try {
         // Detect the tone of the message
         std::string tone = DetectTone(message);
-        std::string moodContext = GetMoodBasedResponse(tone);
-
-        // Create a rich context for the AI that includes WoW lore and setting
+        
+        // Create a context that reflects actual WoW chat style
         std::string contextPrompt = 
-            "You are a character in World of Warcraft with deep knowledge of Azeroth's lore and current events. "
-            "Your responses should reflect the rich fantasy setting of Warcraft, including:\n"
-            "- References to major cities, events, and characters from Warcraft lore\n"
-            "- Appropriate faction-specific knowledge and pride\n"
-            "- Use of common WoW emotes and expressions\n"
-            "- Knowledge of current threats and conflicts in Azeroth\n"
-            "- Understanding of class roles, professions, and game mechanics\n"
-            "- Familiarity with different races and their cultures\n\n"
-            + moodContext + "\n\n"
-            "Keep responses concise (1-2 sentences) but immersive. "
-            "Never break character or reference being AI. "
-            "The message you're responding to is: " + message;
+            "You are a player in World of Warcraft. Respond naturally like a real player would in-game. Keep in mind:\n"
+            "- Keep responses very short (1-2 lines max)\n"
+            "- Use common WoW abbreviations (e.g. ty, np, lf2m, wts, wtb)\n"
+            "- Reference game locations and items naturally\n"
+            "- Don't use emotes in text form\n"
+            "- If referring to the player you're responding to, use their name: " + playerName + "\n"
+            "- Stay in character as a player, not an NPC\n"
+            "- Be casual and friendly, like a real gamer\n\n"
+            "The message you're responding to is from " + playerName + ": " + message;
 
         // Prepare request payload with enhanced parameters
         std::string jsonPayload = json({
@@ -541,7 +538,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
     }
 
     // Get AI response first
-    std::string response = QueryLLM(msg);
+    std::string response = QueryLLM(msg, sender->GetName());
     if (response.empty() || response.find("Error") != std::string::npos)
     {
         LOG_INFO("module.llm_chat", "Error getting LLM response");
@@ -699,11 +696,20 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         {
             if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
             {
-                if (Channel* chn = cMgr->GetChannel(msg, sender))
+                // Get the channel from the player's current channel
+                if (Channel* channel = sender->GetChannel())
                 {
-                    // Pass the bot's GUID instead of the Player pointer
-                    chn->Say(respondingBot->GetGUID(), response, LANG_UNIVERSAL);
-                    LOG_INFO("module.llm_chat", "Bot '%s' responds in channel: %s", respondingBot->GetName().c_str(), response.c_str());
+                    // Build the chat packet for channel message
+                    WorldPacket data;
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, 
+                        respondingBot->GetGUID(), respondingBot->GetName(), nullptr, nullptr, channel->GetName().c_str());
+                    
+                    // Send to all channel members
+                    channel->SendToAll(&data);
+                    LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
+                        respondingBot->GetName().c_str(), 
+                        channel->GetName().c_str(),
+                        response.c_str());
                 }
             }
             break;
