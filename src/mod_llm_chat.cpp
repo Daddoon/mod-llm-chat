@@ -806,7 +806,20 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
-    void OnChatGroup(Player* player, uint32 type, uint32 lang, std::string& msg, Group* group) override
+    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel) override
+    {
+        if (!player || !player->IsInWorld() || !channel)
+            return;
+
+        // Skip if message is empty or too short
+        if (msg.empty() || msg.length() < 2)
+            return;
+
+        // Process the message and send AI response
+        SendAIResponse(player, msg, type, player->GetTeamId());
+    }
+
+    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Group* group) override
     {
         if (!player || !player->IsInWorld() || !group)
             return;
@@ -819,22 +832,9 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
-    void OnChatGuild(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* guild) override
+    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* guild) override
     {
         if (!player || !player->IsInWorld() || !guild)
-            return;
-
-        // Skip if message is empty or too short
-        if (msg.empty() || msg.length() < 2)
-            return;
-
-        // Process the message and send AI response
-        SendAIResponse(player, msg, type, player->GetTeamId());
-    }
-
-    void OnChatChannel(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel) override
-    {
-        if (!player || !player->IsInWorld() || !channel)
             return;
 
         // Skip if message is empty or too short
