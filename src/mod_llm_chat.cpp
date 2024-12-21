@@ -709,35 +709,28 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
-                        // Get the bot's session
-                        WorldSession* session = respondingBot->GetSession();
-                        if (!session)
-                        {
-                            return;
-                        }
-
-                        // Build the chat packet
+                        // Build the chat packet properly
                         WorldPacket data;
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
-                            LANG_UNIVERSAL,
-                            respondingBot,
-                            nullptr,
+                        auto handler = ChatHandler(respondingBot->GetSession());
+                        
+                        // Build the chat packet using ChatHandler
+                        handler.BuildChatPacket(data, CHAT_MSG_CHANNEL, 
+                            LANG_UNIVERSAL, 
+                            respondingBot, 
+                            nullptr, 
                             response,
-                            0,
+                            0,  // achievement ID
                             channelName);
 
-                        // Send to all players in the channel through their sessions
+                        // Send to all players in the channel
                         Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
                         for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
                         {
                             if (Player* player = itr->GetSource())
                             {
-                                if (WorldSession* playerSession = player->GetSession())
+                                if (player->GetSession() && channel->HasPlayer(player))
                                 {
-                                    if (channel->HasPlayer(player))
-                                    {
-                                        playerSession->SendPacket(&data);
-                                    }
+                                    player->GetSession()->SendPacket(&data);
                                 }
                             }
                         }
