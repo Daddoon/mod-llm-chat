@@ -697,7 +697,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         }
         case CHAT_MSG_CHANNEL:
         {
-            if (ChannelMgr* cMgr = channelMgr(team))
+            if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
             {
                 if (Channel* chn = cMgr->GetChannel(msg, sender))
                 {
