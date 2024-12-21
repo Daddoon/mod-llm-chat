@@ -711,12 +711,11 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     {
                         // Build the chat packet for channel message
                         WorldPacket data;
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, 
-                            respondingBot->GetChatTag(), respondingBot->GetGUID(), respondingBot->GetName(), 
-                            ObjectGuid(), "", channelName.c_str());
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, LANG_UNIVERSAL, respondingBot, nullptr, 
+                            response, 0, channelName);
                         
                         // Send to all channel members
-                        channel->SendToAll(data);
+                        channel->SendToAll(&data);
                         LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
                             respondingBot->GetName().c_str(), 
                             channelName.c_str(),
