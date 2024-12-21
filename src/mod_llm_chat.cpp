@@ -361,47 +361,58 @@ public:
 // Create a custom event class for bot responses
 class BotResponseEvent : public BasicEvent
 {
-    Player* bot;
+    Player* responder;
+    Player* originalSender;
     std::string response;
     uint32 chatType;
     std::string message;
     TeamId team;
 
 public:
-    BotResponseEvent(Player* b, std::string r, uint32 t, std::string m, TeamId tm) 
-        : bot(b), response(r), chatType(t), message(m), team(tm) {}
+    BotResponseEvent(Player* r, Player* s, std::string resp, uint32 t, std::string m, TeamId tm) 
+        : responder(r), originalSender(s), response(resp), chatType(t), message(m), team(tm) {}
 
     bool Execute(uint64 /*time*/, uint32 /*diff*/) override
     {
-        if (!bot || !bot->IsInWorld())
+        if (!responder || !responder->IsInWorld())
             return true;
+
+        // Double check we're not responding as the original sender
+        if (originalSender && 
+            (responder == originalSender || 
+             (responder->GetSession() && originalSender->GetSession() && 
+              responder->GetSession()->GetAccountId() == originalSender->GetSession()->GetAccountId())))
+        {
+            LOG_ERROR("module.llm_chat", "Prevented response from original sender's account");
+            return true;
+        }
 
         switch (chatType)
         {
             case CHAT_MSG_SAY:
-                bot->Say(response, LANG_UNIVERSAL);
+                responder->Say(response, LANG_UNIVERSAL);
                 break;
                 
             case CHAT_MSG_YELL:
-                bot->Yell(response, LANG_UNIVERSAL);
+                responder->Yell(response, LANG_UNIVERSAL);
                 break;
                 
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
-                if (Group* group = bot->GetGroup())
+                if (Group* group = responder->GetGroup())
                 {
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
-                        LANG_UNIVERSAL, bot->GetGUID(), ObjectGuid::Empty, 
+                        LANG_UNIVERSAL, responder->GetGUID(), ObjectGuid::Empty, 
                         response, 0);
                     group->BroadcastPacket(&data, false);
                 }
                 break;
                 
             case CHAT_MSG_GUILD:
-                if (Guild* guild = bot->GetGuild())
+                if (Guild* guild = responder->GetGuild())
                 {
-                    guild->BroadcastToGuild(bot->GetSession(), false, 
+                    guild->BroadcastToGuild(responder->GetSession(), false, 
                         response, LANG_UNIVERSAL);
                 }
                 break;
@@ -413,9 +424,9 @@ public:
                     if (spacePos != std::string::npos)
                     {
                         std::string channelName = message.substr(0, spacePos);
-                        if (Channel* channel = cMgr->GetChannel(channelName, bot))
+                        if (Channel* channel = cMgr->GetChannel(channelName, responder))
                         {
-                            channel->Say(bot->GetGUID(), response, LANG_UNIVERSAL);
+                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
                         }
                     }
                 }
@@ -789,7 +800,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             uint32 delay = 500 * (i + 1) + urand(200, 800);
             
             // Schedule the response using the custom event
-            BotResponseEvent* event = new BotResponseEvent(respondingPlayer, prefixedResponse, originalChatType, msg, team);
+            BotResponseEvent* event = new BotResponseEvent(respondingPlayer, sender, prefixedResponse, originalChatType, msg, team);
             respondingPlayer->m_Events.AddEvent(event, respondingPlayer->m_Events.CalculateTime(delay));
         }
     }
