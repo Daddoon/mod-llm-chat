@@ -37,23 +37,23 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
 std::string QueryLLM(std::string const& message, const std::string& playerName);
 
 namespace {
-    /* Config Variables */
-    struct LLMConfig
-    {
-        bool Enabled;
+/* Config Variables */
+struct LLMConfig
+{
+    bool Enabled;
         int32 Provider;
-        std::string OllamaEndpoint;
-        std::string OllamaModel;
-        float ChatRange;
-        std::string ResponsePrefix;
+    std::string OllamaEndpoint;
+    std::string OllamaModel;
+    float ChatRange;
+    std::string ResponsePrefix;
         int32 LogLevel;
         // URL parsing components
         std::string Host;
         std::string Port;
         std::string Target;
-    };
+};
 
-    LLMConfig LLM_Config;
+LLMConfig LLM_Config;
 }
 
 // Helper function to parse URL
@@ -426,7 +426,13 @@ public:
                         std::string channelName = message.substr(0, spacePos);
                         if (Channel* channel = cMgr->GetChannel(channelName, responder))
                         {
-                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
+                            // Get AI response
+                            std::string response = QueryLLM(msg, responder->GetName());
+                            if (!response.empty())
+                            {
+                                // Use Say method with player's GUID
+                                channel->Say(responder->GetGUID(), response.c_str(), LANG_UNIVERSAL);
+                            }
                         }
                     }
                 }
@@ -729,8 +735,8 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                             std::string response = QueryLLM(msg, sender->GetName());
                             if (!response.empty())
                             {
-                                // Use Say method which is public and handles all the necessary checks
-                                channel->Say(sender, response.c_str(), LANG_UNIVERSAL);
+                                // Use Say method with player's GUID
+                                channel->Say(sender->GetGUID(), response.c_str(), LANG_UNIVERSAL);
                             }
                         }
                     }
