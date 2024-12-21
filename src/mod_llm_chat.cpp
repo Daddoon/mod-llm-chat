@@ -384,23 +384,21 @@ public:
         if (!player || !player->IsInWorld())
             return true;
 
-        ChatHandler handler(player->GetSession());
-
         switch (type)
         {
             case CHAT_MSG_SAY:
-                handler.PSendSysMessage(LANG_SAY_SELF, message.c_str());
+                player->Say(message, LANG_UNIVERSAL);
                 break;
-
+                
             case CHAT_MSG_YELL:
-                handler.PSendSysMessage(LANG_YELL_SELF, message.c_str());
+                player->Yell(message, LANG_UNIVERSAL);
                 break;
 
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
                 if (Group* group = player->GetGroup())
                 {
-                    handler.PSendSysMessage(LANG_PARTY, message.c_str());
+                    group->BroadcastChat(message.c_str());
                 }
                 break;
 
@@ -414,7 +412,7 @@ public:
             case CHAT_MSG_WHISPER:
                 if (Player* target = ObjectAccessor::FindPlayer(player->GetTarget()))
                 {
-                    ChatHandler(target->GetSession()).PSendSysMessage(LANG_WHISPER_SELF, message.c_str());
+                    player->Whisper(message, LANG_UNIVERSAL, target);
                 }
                 break;
 
