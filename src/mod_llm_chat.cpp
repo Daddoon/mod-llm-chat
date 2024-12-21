@@ -337,37 +337,71 @@ public:
     }
 };
 
-// Add this class definition before the LLMChatModule class
-class AIResponseEvent : public BasicEvent
+// Create a custom event class for bot responses
+class BotResponseEvent : public BasicEvent
 {
+    Player* bot;
+    std::string response;
+    uint32 chatType;
+    std::string message;
+    TeamId team;
+
 public:
-    AIResponseEvent(Player* p, std::string m, uint32 t, TeamId team) 
-        : player(p), message(m), type(t), teamId(team) {}
+    BotResponseEvent(Player* b, std::string r, uint32 t, std::string m, TeamId tm) 
+        : bot(b), response(r), chatType(t), message(m), team(tm) {}
 
     bool Execute(uint64 /*time*/, uint32 /*diff*/) override
     {
-        LOG_INFO("module.llm_chat", "AIResponseEvent Execute started");
-
-        if (!player || !player->IsInWorld())
-        {
-            LOG_INFO("module.llm_chat", "Invalid player or not in world");
+        if (!bot || !bot->IsInWorld())
             return true;
+
+        switch (chatType)
+        {
+            case CHAT_MSG_SAY:
+                bot->Say(response, LANG_UNIVERSAL);
+                break;
+                
+            case CHAT_MSG_YELL:
+                bot->Yell(response, LANG_UNIVERSAL);
+                break;
+                
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+                if (Group* group = bot->GetGroup())
+                {
+                    WorldPacket data;
+                    ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
+                        LANG_UNIVERSAL, bot->GetGUID(), ObjectGuid::Empty, 
+                        response, 0);
+                    group->BroadcastPacket(&data, false);
+                }
+                break;
+                
+            case CHAT_MSG_GUILD:
+                if (Guild* guild = bot->GetGuild())
+                {
+                    guild->BroadcastToGuild(bot->GetSession(), false, 
+                        response, LANG_UNIVERSAL);
+                }
+                break;
+                
+            case CHAT_MSG_CHANNEL:
+                if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+                {
+                    size_t spacePos = message.find(' ');
+                    if (spacePos != std::string::npos)
+                    {
+                        std::string channelName = message.substr(0, spacePos);
+                        if (Channel* channel = cMgr->GetChannel(channelName, bot))
+                        {
+                            channel->Say(bot->GetGUID(), response, LANG_UNIVERSAL);
+                        }
+                    }
+                }
+                break;
         }
-
-        LOG_INFO("module.llm_chat", "Triggering bot responses for message: %s", message.c_str());
-        
-        // Use SendAIResponse to find and make nearby bots respond
-        SendAIResponse(player, message, teamId, type);
-
-        LOG_INFO("module.llm_chat", "AIResponseEvent Execute completed");
         return true;
     }
-
-private:
-    Player* player;
-    std::string message;
-    uint32 type;
-    TeamId teamId;
 };
 
 class LLMChatModule : public PlayerScript
@@ -710,57 +744,9 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             // Add a small delay between responses
             uint32 delay = 100 * (i + 1) + urand(0, 400);
             
-            // Schedule the response
-            respondingBot->m_Events.AddEvent([respondingBot, prefixedResponse, originalChatType, msg, team]() {
-                if (!respondingBot || !respondingBot->IsInWorld())
-                    return;
-
-                switch (originalChatType)
-                {
-                    case CHAT_MSG_SAY:
-                        respondingBot->Say(prefixedResponse, LANG_UNIVERSAL);
-                        break;
-                        
-                    case CHAT_MSG_YELL:
-                        respondingBot->Yell(prefixedResponse, LANG_UNIVERSAL);
-                        break;
-                        
-                    case CHAT_MSG_PARTY:
-                    case CHAT_MSG_PARTY_LEADER:
-                        if (Group* group = respondingBot->GetGroup())
-                        {
-                            WorldPacket data;
-                            ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(originalChatType), 
-                                LANG_UNIVERSAL, respondingBot->GetGUID(), ObjectGuid::Empty, 
-                                prefixedResponse, 0);
-                            group->BroadcastPacket(&data, false);
-                        }
-                        break;
-                        
-                    case CHAT_MSG_GUILD:
-                        if (Guild* guild = respondingBot->GetGuild())
-                        {
-                            guild->BroadcastToGuild(respondingBot->GetSession(), false, 
-                                prefixedResponse, LANG_UNIVERSAL);
-                        }
-                        break;
-                        
-                    case CHAT_MSG_CHANNEL:
-                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-                        {
-                            size_t spacePos = msg.find(' ');
-                            if (spacePos != std::string::npos)
-                            {
-                                std::string channelName = msg.substr(0, spacePos);
-                                if (Channel* channel = cMgr->GetChannel(channelName, respondingBot))
-                                {
-                                    channel->Say(respondingBot->GetGUID(), prefixedResponse, LANG_UNIVERSAL);
-                                }
-                            }
-                        }
-                        break;
-                }
-            }, respondingBot->m_Events.CalculateTime(delay));
+            // Schedule the response using the custom event
+            BotResponseEvent* event = new BotResponseEvent(respondingBot, prefixedResponse, originalChatType, msg, team);
+            respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
         }
     }
     catch (const std::exception& e)
