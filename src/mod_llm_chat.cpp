@@ -695,7 +695,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         maxDistance = std::numeric_limits<float>::max();
     }
 
-    map->DoForAllPlayers([&nearbyPlayers, sender, maxDistance](Player* player) {
+    map->DoForAllPlayers([&nearbyPlayers, sender, maxDistance, chatType, &msg, team](Player* player) {
         if (player && player->IsInWorld() && player != sender)
         {
             // For party chat, check if in same group
