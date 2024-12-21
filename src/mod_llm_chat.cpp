@@ -481,30 +481,42 @@ public:
             return;
         }
 
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: %s", 
+        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: '%s'", 
             player->GetName().c_str(), 
             GetChatTypeString(type).c_str(), 
             msg.c_str());
 
-        // Skip if this is an AI response (to prevent infinite loops)
-        if (msg.find(LLM_Config.ResponsePrefix) == 0)
-        {
-            LOG_INFO("module.llm_chat", "Skipping AI response message");
-            return;
-        }
-
         // Store the message for processing
         std::string message = msg;
 
-        // Check if the message is from a bot
+        // Check if this is an AI response
+        bool isAIResponse = !LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0;
         bool isBot = player->GetSession() && player->GetSession()->IsBot();
-        static const float BOT_RESPONSE_CHANCE = 0.5f;
 
-        if (isBot)
+        // Handle AI response logic
+        if (isAIResponse)
         {
-            float chance = rand() / float(RAND_MAX);
-            LOG_INFO("module.llm_chat", "Bot message detected. Response chance: %f vs threshold: %f", chance, BOT_RESPONSE_CHANCE);
-            if (chance > BOT_RESPONSE_CHANCE)
+            LOG_INFO("module.llm_chat", "AI response detected from %s", player->GetName().c_str());
+            
+            // For AI responses, we'll have a lower chance of triggering another response
+            // This helps prevent infinite loops while still allowing some back-and-forth
+            static const float AI_RESPONSE_CHANCE = 0.3f; // 30% chance for AI to respond to AI
+            
+            if (urand(0, 100) > (AI_RESPONSE_CHANCE * 100))
+            {
+                LOG_INFO("module.llm_chat", "Skipping AI response due to random chance");
+                return;
+            }
+
+            // Remove the AI prefix for processing
+            message = msg.substr(LLM_Config.ResponsePrefix.length());
+        }
+        else if (isBot)
+        {
+            // For regular bot messages, use standard response chance
+            static const float BOT_RESPONSE_CHANCE = 0.5f; // 50% chance for regular bot messages
+            
+            if (urand(0, 100) > (BOT_RESPONSE_CHANCE * 100))
             {
                 LOG_INFO("module.llm_chat", "Skipping bot message due to random chance");
                 return;
@@ -524,17 +536,27 @@ public:
             {
                 if (!message.empty())
                 {
-                    LOG_INFO("module.llm_chat", "Processing message for AI response - Type: %s, Message: %s", 
+                    LOG_INFO("module.llm_chat", "Processing message for AI response - Type: %s, Message: '%s'", 
                         GetChatTypeString(type).c_str(), message.c_str());
 
-                    // Add a small delay before processing
-                    uint32 delay = urand(100, 500);  // Random delay between 100ms and 500ms
-                    LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+                    // Add a varying delay before processing to make conversations feel more natural
+                    uint32 baseDelay = isAIResponse ? 1000 : 100; // Longer delay for AI responses
+                    uint32 randomDelay = urand(100, 500);
+                    uint32 totalDelay = baseDelay + randomDelay;
 
-                    player->m_Events.AddEvent(
-                        new AIResponseEvent(player, message, type, player->GetTeamId()),
-                        player->m_Events.CalculateTime(delay)
-                    );
+                    LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", totalDelay);
+
+                    // Create and add the event
+                    AIResponseEvent* event = new AIResponseEvent(player, message, type, player->GetTeamId());
+                    if (event)
+                    {
+                        player->m_Events.AddEvent(event, player->m_Events.CalculateTime(totalDelay));
+                        LOG_INFO("module.llm_chat", "Successfully added AI response event");
+                    }
+                    else
+                    {
+                        LOG_ERROR("module.llm_chat", "Failed to create AI response event");
+                    }
                 }
                 break;
             }
@@ -583,10 +605,12 @@ public:
 
     void OnBeforeConfigLoad(bool /*reload*/) override
     {
+        LOG_INFO("module.llm_chat", "Loading LLM Chat configuration...");
+
         LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
         LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
         LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama2");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
@@ -595,16 +619,18 @@ public:
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
 
         // Log the loaded configuration
-        LOG_INFO("module.llm_chat", "%s", "=== LLM Chat Configuration ===");
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Enabled: %s", LLM_Config.Enabled ? "true" : "false").c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Provider: %d", LLM_Config.Provider).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Endpoint: %s", LLM_Config.OllamaEndpoint.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Model: %s", LLM_Config.OllamaModel.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Host: %s", LLM_Config.Host.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Port: %s", LLM_Config.Port.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Target: %s", LLM_Config.Target.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Log Level: %d", LLM_Config.LogLevel).c_str());
-        LOG_INFO("module.llm_chat", "%s", "=== End Configuration ===\n");
+        LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
+        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
+        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
+        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
+        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
+        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
+        LOG_INFO("module.llm_chat", "Response Prefix: '%s'", LLM_Config.ResponsePrefix.c_str());
+        LOG_INFO("module.llm_chat", "Chat Range: %.2f", LLM_Config.ChatRange);
+        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
+        LOG_INFO("module.llm_chat", "=== End Configuration ===");
     }
 };
 
