@@ -649,14 +649,14 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
     {
         case CHAT_MSG_SAY:
         {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
         }
         case CHAT_MSG_YELL:
         {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
             LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
@@ -668,7 +668,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             {
                 if (group == sender->GetGroup())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
                     group->BroadcastPacket(&data, false);
                     LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
@@ -681,7 +681,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             {
                 if (guild == sender->GetGuild())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
                     guild->BroadcastPacket(&data);
                     LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
@@ -690,7 +690,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         }
         case CHAT_MSG_WHISPER:
         {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
             sender->GetSession()->SendPacket(&data);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
@@ -710,7 +710,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         }
         default:
         {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
