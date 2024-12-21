@@ -686,7 +686,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
 
     // Get all players in range
     std::list<Player*> nearbyPlayers;
-    float maxDistance = (chatType == CHAT_MSG_YELL) ? YELL_RANGE : SAY_RANGE;
+    float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : 25.0f; // Default yell range is 300 yards, say range is 25 yards
 
     // For party/guild/channel chat, we don't need distance checks
     if (chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER ||
