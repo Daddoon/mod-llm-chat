@@ -644,71 +644,77 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
 
     LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
 
-    // Have the bot send the message
     WorldPacket data;
     switch (originalChatType)
     {
         case CHAT_MSG_SAY:
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+        {
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
-            
+        }
         case CHAT_MSG_YELL:
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, LANG_UNIVERSAL, respondingBot, nullptr, response);
+        {
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
             LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
-            
+        }
         case CHAT_MSG_PARTY:
         case CHAT_MSG_PARTY_LEADER:
+        {
             if (Group* group = respondingBot->GetGroup())
             {
                 if (group == sender->GetGroup())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
                     group->BroadcastPacket(&data, false);
                     LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
             }
             break;
-            
+        }
         case CHAT_MSG_GUILD:
+        {
             if (Guild* guild = respondingBot->GetGuild())
             {
                 if (guild == sender->GetGuild())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
                     guild->BroadcastPacket(&data);
                     LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
             }
             break;
-            
+        }
         case CHAT_MSG_WHISPER:
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, respondingBot, nullptr, response);
+        {
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
             sender->GetSession()->SendPacket(&data);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
-            
+        }
         case CHAT_MSG_CHANNEL:
-            // For channel messages, we'll use the same channel the original message was sent in
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, LANG_UNIVERSAL, respondingBot, nullptr, response);
-            if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+        {
+            if (ChannelMgr* cMgr = channelMgr(team))
             {
                 if (Channel* chn = cMgr->GetChannel(msg, sender))
                 {
-                    chn->SendToAll(&data, sender);
+                    // Use Channel's Say method which handles all the proper packet building and sending
+                    chn->Say(respondingBot, response.c_str(), LANG_UNIVERSAL);
                     LOG_INFO("module.llm_chat", "Bot '%s' responds in channel: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
             }
             break;
-            
+        }
         default:
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+        {
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetObjectGuid(), respondingBot->GetName());
             respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
+        }
     }
 
     LOG_INFO("module.llm_chat", "Finished sending bot response\n");
