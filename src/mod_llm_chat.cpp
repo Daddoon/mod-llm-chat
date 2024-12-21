@@ -707,6 +707,11 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
                 return;
 
+            // Skip if this is the original sender
+            if (potentialBot == sender)
+                return;
+
+            // Only allow actual bots to respond
             if (potentialBot->GetSession()->IsBot())
             {
                 bool isEligible = false;
@@ -751,6 +756,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
 
                 if (isEligible)
                 {
+                    LOG_INFO("module.llm_chat", "Found eligible bot: %s", potentialBot->GetName().c_str());
                     eligibleBots.push_back(potentialBot);
                 }
             }
