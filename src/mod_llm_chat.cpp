@@ -709,13 +709,22 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
-                        // Send message through the bot's session
-                        respondingBot->GetSession()->SendChatMessage(
-                            respondingBot,
-                            CHAT_MSG_CHANNEL,
-                            LANG_UNIVERSAL,
-                            channelName,
-                            response);
+                        // Build the chat packet for channel message
+                        WorldPacket data;
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
+                            response,       // message
+                            LANG_UNIVERSAL, // language
+                            CHAT_TAG_NONE,  // chat tag
+                            respondingBot->GetGUID(), 
+                            respondingBot->GetName(),
+                            nullptr,        // target guid
+                            "",            // target name
+                            channelName);   // channel name
+
+                        // Broadcast to all players in range
+                        respondingBot->SendMessageToSetInRange(&data, 
+                            sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_TEXTEMOTE), 
+                            true);
                         
                         LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
                             respondingBot->GetName().c_str(), 
