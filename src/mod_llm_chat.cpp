@@ -354,100 +354,10 @@ public:
             return true;
         }
 
-        LOG_INFO("module.llm_chat", "Getting AI response for message: %s", message.c_str());
+        LOG_INFO("module.llm_chat", "Triggering bot responses for message: %s", message.c_str());
         
-        // Get the AI response
-        std::string response = QueryLLM(message, player->GetName());
-        
-        if (response.empty() || response.find("Error") != std::string::npos)
-        {
-            LOG_ERROR("module.llm_chat", "Failed to get AI response: %s", response.c_str());
-            return true;
-        }
-
-        LOG_INFO("module.llm_chat", "Got AI response: %s", response.c_str());
-
-        // Add response prefix to message
-        std::string prefixedMessage = LLM_Config.ResponsePrefix + response;
-        LOG_INFO("module.llm_chat", "Sending prefixed message: %s", prefixedMessage.c_str());
-
-        switch (type)
-        {
-            case CHAT_MSG_SAY:
-                LOG_INFO("module.llm_chat", "Sending SAY message");
-                player->Say(prefixedMessage, LANG_UNIVERSAL);
-                break;
-
-            case CHAT_MSG_YELL:
-                LOG_INFO("module.llm_chat", "Sending YELL message");
-                player->Yell(prefixedMessage, LANG_UNIVERSAL);
-                break;
-
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                if (Group* group = player->GetGroup())
-                {
-                    LOG_INFO("module.llm_chat", "Sending PARTY message");
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, 
-                        static_cast<ChatMsg>(type), 
-                        LANG_UNIVERSAL,
-                        player->GetGUID(),
-                        ObjectGuid::Empty,
-                        prefixedMessage,
-                        0);
-                    group->BroadcastPacket(&data, false);
-                }
-                break;
-
-            case CHAT_MSG_GUILD:
-                if (Guild* guild = player->GetGuild())
-                {
-                    LOG_INFO("module.llm_chat", "Sending GUILD message");
-                    guild->BroadcastToGuild(player->GetSession(), false, prefixedMessage, LANG_UNIVERSAL);
-                }
-                break;
-
-            case CHAT_MSG_WHISPER:
-                if (Player* target = ObjectAccessor::FindPlayer(player->GetTarget()))
-                {
-                    LOG_INFO("module.llm_chat", "Sending WHISPER message to: %s", target->GetName().c_str());
-                    player->Whisper(prefixedMessage, LANG_UNIVERSAL, target);
-                }
-                break;
-
-            case CHAT_MSG_CHANNEL:
-                {
-                    LOG_INFO("module.llm_chat", "Processing CHANNEL message");
-                    std::string channelName;
-                    size_t spacePos = message.find(' ');
-                    if (spacePos != std::string::npos)
-                    {
-                        channelName = message.substr(0, spacePos);
-                        std::string channelMessage = prefixedMessage.substr(spacePos + 1);
-                        
-                        LOG_INFO("module.llm_chat", "Channel: %s, Message: %s", channelName.c_str(), channelMessage.c_str());
-                        
-                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(teamId))
-                        {
-                            if (Channel* channel = cMgr->GetChannel(channelName, player))
-                            {
-                                LOG_INFO("module.llm_chat", "Sending message to channel");
-                                channel->Say(player->GetGUID(), channelMessage, LANG_UNIVERSAL);
-                            }
-                            else
-                            {
-                                LOG_ERROR("module.llm_chat", "Failed to get channel: %s", channelName.c_str());
-                            }
-                        }
-                        else
-                        {
-                            LOG_ERROR("module.llm_chat", "Failed to get ChannelMgr for team: %d", teamId);
-                        }
-                    }
-                }
-                break;
-        }
+        // Use SendAIResponse to find and make nearby bots respond
+        SendAIResponse(player, message, teamId, type);
 
         LOG_INFO("module.llm_chat", "AIResponseEvent Execute completed");
         return true;
