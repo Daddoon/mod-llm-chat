@@ -548,7 +548,7 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
             break;
             
         case CHAT_MSG_WHISPER:
-            respondingBot->Whisper(response, LANG_UNIVERSAL, sender->GetGUID());
+            respondingBot->Whisper(response, LANG_UNIVERSAL, sender);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
             
