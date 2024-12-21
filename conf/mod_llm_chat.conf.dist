@@ -58,4 +58,28 @@ LLMChat.ResponsePrefix = ""
 
 LLMChat.LogLevel = 3
 
+#    LLMChat.MaxResponsesPerMessage
+#        Description: Maximum number of bots that can respond to a single message
+#        Default:     2  - (Two bots maximum)
+#                     0  - (Disabled)
+#                     1-10  - (Number of responding bots)
+
+LLMChat.MaxResponsesPerMessage = 2
+
+#    LLMChat.MaxConversationRounds
+#        Description: Maximum number of back-and-forth exchanges in a conversation
+#        Default:     3  - (Three rounds of responses)
+#                     0  - (Disabled)
+#                     1-10  - (Number of conversation rounds)
+
+LLMChat.MaxConversationRounds = 3
+
+#    LLMChat.ResponseChance
+#        Description: Percentage chance (0-100) that an eligible bot will respond
+#        Default:     50  - (50% chance to respond)
+#                     0  - (Never respond)
+#                     100  - (Always respond)
+
+LLMChat.ResponseChance = 50
+
 ################################################################################################### 

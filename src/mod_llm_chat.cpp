@@ -51,9 +51,16 @@ struct LLMConfig
         std::string Host;
         std::string Port;
         std::string Target;
+        // New configuration options
+        uint32 MaxResponsesPerMessage;  // Maximum number of bots that can respond to a single message
+        uint32 MaxConversationRounds;   // Maximum number of back-and-forth exchanges in a conversation
+        uint32 ResponseChance;          // Percentage chance (0-100) that a bot will respond
 };
 
 LLMConfig LLM_Config;
+
+// Add a conversation counter
+std::map<std::string, uint32> conversationRounds;  // Key: channelName+originalMessage, Value: round count
 }
 
 // Helper function to parse URL
@@ -403,8 +410,7 @@ public:
                 {
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
-                        LANG_UNIVERSAL, responder->GetGUID(), ObjectGuid::Empty, 
-                        response, 0);
+                        LANG_UNIVERSAL, responder, nullptr, response);
                     group->BroadcastPacket(&data, false);
                 }
                 break;
@@ -426,13 +432,7 @@ public:
                         std::string channelName = message.substr(0, spacePos);
                         if (Channel* channel = cMgr->GetChannel(channelName, responder))
                         {
-                            // Get AI response
-                            std::string response = QueryLLM(message, responder->GetName());
-                            if (!response.empty())
-                            {
-                                // Use Say method with player's GUID
-                                channel->Say(responder->GetGUID(), response.c_str(), LANG_UNIVERSAL);
-                            }
+                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
                         }
                     }
                 }
@@ -583,6 +583,11 @@ public:
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
+        
+        // New configuration options
+        LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 2);
+        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 3);
+        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 50);
 
         // Parse the endpoint URL
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
@@ -599,6 +604,9 @@ public:
         LOG_INFO("module.llm_chat", "Response Prefix: '%s'", LLM_Config.ResponsePrefix.c_str());
         LOG_INFO("module.llm_chat", "Chat Range: %.2f", LLM_Config.ChatRange);
         LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
+        LOG_INFO("module.llm_chat", "Max Responses Per Message: %u", LLM_Config.MaxResponsesPerMessage);
+        LOG_INFO("module.llm_chat", "Max Conversation Rounds: %u", LLM_Config.MaxConversationRounds);
+        LOG_INFO("module.llm_chat", "Response Chance: %u%%", LLM_Config.ResponseChance);
         LOG_INFO("module.llm_chat", "=== End Configuration ===");
     }
 };
@@ -690,102 +698,79 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     if (!map)
         return;
 
-    // Get all players in range
-    std::list<Player*> nearbyPlayers;
-    float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : 25.0f; // Default yell range is 300 yards, say range is 25 yards
-
-    // For party/guild/channel chat, we don't need distance checks
-    if (chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER ||
-        chatType == CHAT_MSG_GUILD || chatType == CHAT_MSG_CHANNEL)
+    // Create a conversation key
+    std::string conversationKey = Acore::StringFormat("%s_%s", sender->GetName().c_str(), msg.c_str());
+    
+    // Check if we've reached the maximum rounds for this conversation
+    if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
     {
-        maxDistance = std::numeric_limits<float>::max();
+        LOG_DEBUG("module.llm_chat", "Maximum conversation rounds reached for: %s", conversationKey.c_str());
+        return;
     }
+    
+    // Increment the conversation round counter
+    conversationRounds[conversationKey]++;
 
-    map->DoForAllPlayers([&nearbyPlayers, sender, maxDistance, chatType, &msg, team](Player* player) {
-        if (player && player->IsInWorld() && player != sender)
-        {
-            // For party chat, check if in same group
-            if (chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER)
-            {
-                Group* group = sender->GetGroup();
-                if (!group || !group->IsMember(player->GetGUID()))
-                    return;
-            }
+    // Get all eligible bots
+    std::vector<Player*> eligibleBots;
+    float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : LLM_Config.ChatRange;
 
-            // For guild chat, check if in same guild
-            if (chatType == CHAT_MSG_GUILD)
-            {
-                Guild* guild = sender->GetGuild();
-                if (!guild || guild->GetId() != player->GetGuildId())
-                    return;
-            }
+    map->DoForAllPlayers([&](Player* player) {
+        if (!player || !player->IsInWorld() || player == sender)
+            return;
 
-            // For channel chat, check if in same channel
-            if (chatType == CHAT_MSG_CHANNEL)
-            {
-                size_t spacePos = msg.find(' ');
-                if (spacePos != std::string::npos)
-                {
-                    std::string channelName = msg.substr(0, spacePos);
-                    if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-                    {
-                        if (Channel* channel = cMgr->GetChannel(channelName, sender))
-                        {
-                            // Get AI response
-                            std::string response = QueryLLM(msg, sender->GetName());
-                            if (!response.empty())
-                            {
-                                // Use Say method with player's GUID
-                                channel->Say(sender->GetGUID(), response.c_str(), LANG_UNIVERSAL);
-                            }
-                        }
-                    }
-                }
-            }
+        // Skip if it's not a bot or if it's the original sender
+        if (!player->GetSession() || !player->GetSession()->IsBot())
+            return;
 
-            // For say/yell, check distance
-            if (chatType == CHAT_MSG_SAY || chatType == CHAT_MSG_YELL)
-            {
-                if (sender->GetDistance(player) > maxDistance)
-                    return;
-            }
+        // Skip if player is too far for say/yell
+        if ((chatType == CHAT_MSG_SAY || chatType == CHAT_MSG_YELL) && 
+            sender->GetDistance(player) > maxDistance)
+            return;
 
-            nearbyPlayers.push_back(player);
-        }
+        // For party chat, check if in same group
+        if ((chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER) &&
+            (!sender->GetGroup() || !sender->GetGroup()->IsMember(player->GetGUID())))
+            return;
+
+        // For guild chat, check if in same guild
+        if (chatType == CHAT_MSG_GUILD &&
+            (!sender->GetGuild() || sender->GetGuild()->GetId() != player->GetGuildId()))
+            return;
+
+        eligibleBots.push_back(player);
     });
 
-    if (nearbyPlayers.empty())
+    if (eligibleBots.empty())
     {
-        LOG_DEBUG("module.llm_chat", "No eligible players found to respond");
+        LOG_DEBUG("module.llm_chat", "No eligible bots found to respond");
         return;
     }
 
-    // Select a random player to respond
-    uint32 randomIndex = urand(0, nearbyPlayers.size() - 1);
-    auto it = nearbyPlayers.begin();
-    std::advance(it, randomIndex);
-    Player* respondingPlayer = *it;
-
-    if (!respondingPlayer || !respondingPlayer->IsInWorld())
+    // Randomly select up to MaxResponsesPerMessage bots
+    std::random_shuffle(eligibleBots.begin(), eligibleBots.end());
+    uint32 numResponders = std::min(LLM_Config.MaxResponsesPerMessage, static_cast<uint32>(eligibleBots.size()));
+    
+    for (uint32 i = 0; i < numResponders; ++i)
     {
-        LOG_ERROR("module.llm_chat", "Selected player is invalid or not in world");
-        return;
+        // Apply response chance
+        if (urand(1, 100) > LLM_Config.ResponseChance)
+            continue;
+
+        Player* respondingBot = eligibleBots[i];
+        
+        // Get AI response
+        std::string response = QueryLLM(msg, sender->GetName());
+        if (response.empty())
+            continue;
+
+        // Add a random delay between 1-3 seconds, increasing with each responder
+        uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
+
+        // Schedule the response
+        BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
+        respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
     }
-
-    // Get AI response
-    std::string response = QueryLLM(msg, sender->GetName());
-    if (response.empty())
-    {
-        LOG_ERROR("module.llm_chat", "Failed to get AI response");
-        return;
-    }
-
-    // Add a random delay between 1-3 seconds
-    uint32 delay = urand(1000, 3000);
-
-    // Schedule the response using the custom event
-    BotResponseEvent* event = new BotResponseEvent(respondingPlayer, sender, response, chatType, msg, team);
-    respondingPlayer->m_Events.AddEvent(event, respondingPlayer->m_Events.CalculateTime(delay));
 }
 
 class LLMChatPlayerScript : public PlayerScript
