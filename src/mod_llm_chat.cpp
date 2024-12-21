@@ -409,48 +409,36 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     if (!player || !player->IsInWorld())
         return nullptr;
 
-    std::vector<Player*> nearbyBots;
     Map* map = player->GetMap();
     if (!map)
         return nullptr;
 
-    // Get player's position
+    std::vector<Player*> botList;
     float playerX = player->GetPositionX();
     float playerY = player->GetPositionY();
     float playerZ = player->GetPositionZ();
 
-    // Get nearby players using grid search with strict distance check
-    Acore::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
-    Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(player, nearbyBots, checker);
-    
-    // Get the cell coordinates
-    CellCoord p(Acore::ComputeCellCoord(playerX, playerY));
-    Cell cell(p);
-    cell.Visit(p, Acore::makeGridVisitor(searcher), *map, *player, maxDistance);
+    // Iterate through all players on the map
+    map->DoForAllPlayers([&](Player* potentialBot) {
+        if (!potentialBot || potentialBot == player || !potentialBot->IsInWorld())
+            return;
 
-    // Filter for bots only
-    std::vector<Player*> botList;
-    for (Player* nearby : nearbyBots)
-    {
-        if (!nearby || nearby == player || !nearby->IsInWorld())
-            continue;
+        // Check if it's a bot
+        if (!potentialBot->GetSession() || !potentialBot->GetSession()->IsBot())
+            return;
 
-        // Strict distance check in 3D space
+        // Calculate 3D distance
         float distance = std::sqrt(
-            std::pow(playerX - nearby->GetPositionX(), 2) +
-            std::pow(playerY - nearby->GetPositionY(), 2) +
-            std::pow(playerZ - nearby->GetPositionZ(), 2)
+            std::pow(playerX - potentialBot->GetPositionX(), 2) +
+            std::pow(playerY - potentialBot->GetPositionY(), 2) +
+            std::pow(playerZ - potentialBot->GetPositionZ(), 2)
         );
 
-        if (distance > maxDistance)
-            continue;
-
-        // Check if it's a playerbot
-        if (nearby->GetSession() && nearby->GetSession()->IsBot())
+        if (distance <= maxDistance)
         {
-            botList.push_back(nearby);
+            botList.push_back(potentialBot);
         }
-    }
+    });
 
     if (botList.empty())
         return nullptr;
