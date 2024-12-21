@@ -244,19 +244,20 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
 
-        // Prepare request payload
+        // Prepare request payload with optimized parameters for llama2:3.2b
         json requestJson = {
             {"model", LLM_Config.OllamaModel},
             {"prompt", contextPrompt},
             {"stream", false},
             {"options", {
-                {"temperature", 0.9},
-                {"num_predict", 100},
-                {"num_ctx", 2048},
+                {"temperature", 0.7},     // Lower temperature for more focused responses
+                {"num_predict", 48},      // Shorter responses for chat
+                {"num_ctx", 512},         // Smaller context window for faster responses
                 {"num_thread", std::thread::hardware_concurrency()},
-                {"top_k", 40},
-                {"top_p", 0.9},
-                {"repeat_penalty", 1.2}
+                {"top_k", 20},            // More focused token selection
+                {"top_p", 0.7},           // More focused sampling
+                {"repeat_penalty", 1.1},   // Slightly lower to allow some repetition in chat
+                {"stop", {"\n", ".", "!", "?"}} // Stop at natural sentence endings
             }}
         };
 
@@ -273,7 +274,13 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         LOG_DEBUG("module.llm_chat", "Resolved host %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
         // Make the connection
-        stream.connect(results);
+        beast::error_code ec;
+        stream.connect(results, ec);
+        if (ec)
+        {
+            LOG_ERROR("module.llm_chat", "Failed to connect to API: %s", ec.message().c_str());
+            return "Error: Connection failed";
+        }
         LOG_DEBUG("module.llm_chat", "Connected to API endpoint");
 
         // Set up an HTTP POST request message
@@ -285,7 +292,12 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         req.prepare_payload();
 
         // Send the HTTP request
-        http::write(stream, req);
+        http::write(stream, req, ec);
+        if (ec)
+        {
+            LOG_ERROR("module.llm_chat", "Failed to send request: %s", ec.message().c_str());
+            return "Error: Request failed";
+        }
         LOG_DEBUG("module.llm_chat", "Sent request to API");
 
         // This buffer is used for reading
@@ -295,17 +307,21 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         http::response<http::string_body> res;
 
         // Receive the HTTP response
-        http::read(stream, buffer, res);
+        http::read(stream, buffer, res, ec);
+        if (ec)
+        {
+            LOG_ERROR("module.llm_chat", "Failed to read response: %s", ec.message().c_str());
+            return "Error: Response failed";
+        }
         LOG_DEBUG("module.llm_chat", "Received response with status: %d", static_cast<int>(res.result()));
         LOG_DEBUG("module.llm_chat", "Response body: %s", res.body().c_str());
 
         // Gracefully close the socket
-        beast::error_code ec;
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
         if (res.result() != http::status::ok)
         {
-            LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
+            LOG_ERROR("module.llm_chat", "HTTP error %d: %s", static_cast<int>(res.result()), res.body().c_str());
             return "Error: Service unavailable";
         }
 
@@ -313,6 +329,11 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         LOG_DEBUG("module.llm_chat", "Final processed response: %s", response.c_str());
         
         return response;
+    }
+    catch (const boost::system::system_error& e)
+    {
+        LOG_ERROR("module.llm_chat", "Boost system error: %s", e.what());
+        return "Error: Network error";
     }
     catch (const std::exception& e)
     {
@@ -542,7 +563,7 @@ public:
         LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
         LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
         LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama2");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
@@ -757,8 +778,8 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             // Add response prefix
             std::string prefixedResponse = LLM_Config.ResponsePrefix + response;
             
-            // Add a small delay between responses
-            uint32 delay = 100 * (i + 1) + urand(0, 400);
+            // Add a larger delay between responses to avoid overwhelming the API
+            uint32 delay = 500 * (i + 1) + urand(200, 800);
             
             // Schedule the response using the custom event
             BotResponseEvent* event = new BotResponseEvent(respondingBot, prefixedResponse, originalChatType, msg, team);
