@@ -238,6 +238,12 @@ std::string GetMoodBasedResponse(const std::string& tone) {
 
 std::string QueryLLM(std::string const& message, const std::string& playerName)
 {
+    if (message.empty() || playerName.empty())
+    {
+        LOG_ERROR("module.llm_chat", "Empty message or player name");
+        return "Error: Invalid input";
+    }
+
     try {
         // Detect the tone of the message
         std::string tone = DetectTone(message);
@@ -275,25 +281,23 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             }}
         }).dump();
 
-        LOG_INFO("module.llm_chat", "%s", "=== API Request ===");
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Model: %s", LLM_Config.OllamaModel.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Input: %s", message.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Full Request: %s", jsonPayload.c_str()).c_str());
+        LOG_DEBUG("module.llm_chat", "=== API Request ===");
+        LOG_DEBUG("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+        LOG_DEBUG("module.llm_chat", "Input: %s", message.c_str());
+        LOG_DEBUG("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
 
         // Set up the IO context
         net::io_context ioc;
-
-        // These objects perform our I/O
         tcp::resolver resolver(ioc);
         beast::tcp_stream stream(ioc);
 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str()).c_str());
+        LOG_DEBUG("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
         // Make the connection on the IP address we get from a lookup
         stream.connect(results);
-        LOG_INFO("module.llm_chat", "%s", "Connected to Ollama API");
+        LOG_DEBUG("module.llm_chat", "Connected to Ollama API");
 
         // Set up an HTTP POST request message
         http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -305,7 +309,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Send the HTTP request to the remote host
         http::write(stream, req);
-        LOG_INFO("module.llm_chat", "%s", "Request sent to API");
+        LOG_DEBUG("module.llm_chat", "Request sent to API");
 
         // This buffer is used for reading and must be persisted
         beast::flat_buffer buffer;
@@ -315,27 +319,40 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Receive the HTTP response
         http::read(stream, buffer, res);
-        LOG_INFO("module.llm_chat", "%s", "=== API Response ===");
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Status: %d", static_cast<int>(res.result())).c_str());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Raw Response: %s", res.body().c_str()).c_str());
+        LOG_DEBUG("module.llm_chat", "=== API Response ===");
+        LOG_DEBUG("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
+        LOG_DEBUG("module.llm_chat", "Raw Response: %s", res.body().c_str());
 
         // Gracefully close the socket
         beast::error_code ec;
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
-        if (res.result() != http::status::ok) {
-            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error: %d", static_cast<int>(res.result())).c_str());
-            return "Error communicating with service";
+        if (res.result() != http::status::ok)
+        {
+            LOG_ERROR("module.llm_chat", "HTTP error: %d", static_cast<int>(res.result()));
+            return "Error: Service unavailable";
         }
 
         std::string response = ParseLLMResponse(res.body());
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final Processed Response: %s", response.c_str()).c_str());
-        LOG_INFO("module.llm_chat", "%s", "=== End API Transaction ===\n");
+        if (response.empty())
+        {
+            LOG_ERROR("module.llm_chat", "Empty response after parsing");
+            return "Error: Empty response";
+        }
+
+        LOG_DEBUG("module.llm_chat", "Final Processed Response: %s", response.c_str());
+        LOG_DEBUG("module.llm_chat", "=== End API Transaction ===\n");
         return response;
     }
-    catch (std::exception const& e) {
-        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("API Error: %s", e.what()).c_str());
-        return "Sorry, I'm having trouble with that right now.";
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
+        return "Error: Service error";
+    }
+    catch (...)
+    {
+        LOG_ERROR("module.llm_chat", "Unknown API Error");
+        return "Error: Unknown error";
     }
 }
 
