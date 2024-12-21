@@ -565,232 +565,250 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         return;
     }
 
-    LOG_INFO("module.llm_chat", "Starting AI Response - Player: %s, Message: %s, Type: %u", 
+    LOG_DEBUG("module.llm_chat", "Starting AI Response - Player: %s, Message: %s, Type: %u", 
         sender->GetName().c_str(), 
         msg.c_str(),
         originalChatType);
 
     if (!LLM_Config.Enabled)
     {
-        LOG_INFO("module.llm_chat", "Module is disabled for player %s", sender->GetName().c_str());
+        LOG_DEBUG("module.llm_chat", "Module is disabled for player %s", sender->GetName().c_str());
         return;
     }
 
-    // Get AI response first
-    std::string response = QueryLLM(msg, sender->GetName());
-    if (response.empty() || response.find("Error") != std::string::npos)
-    {
-        LOG_INFO("module.llm_chat", "Error getting LLM response");
-        return;
-    }
-
-    // Find a nearby bot to respond
-    Player* respondingBot = nullptr;
-    
-    // Check if this is a distance-dependent chat type
-    bool requiresDistance = (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL);
-    
-    if (requiresDistance)
-    {
-        // For local chat, find a nearby bot with strict distance check
-        float chatRange = (originalChatType == CHAT_MSG_SAY) ? LLM_Config.ChatRange : LLM_Config.ChatRange * 2;
-        respondingBot = GetNearbyBot(sender, chatRange);
+    try {
+        // Get AI response first
+        std::string response = QueryLLM(msg, sender->GetName());
+        if (response.empty())
+        {
+            LOG_ERROR("module.llm_chat", "Empty response from LLM");
+            return;
+        }
         
-        if (!respondingBot)
+        if (response.find("Error") != std::string::npos)
         {
-            LOG_INFO("module.llm_chat", "No nearby bots found within range %f", chatRange);
+            LOG_ERROR("module.llm_chat", "Error in LLM response: %s", response.c_str());
             return;
         }
-    }
-    else
-    {
-        // For other chat types, find any available bot
-        std::vector<Player*> availableBots;
-        Map* map = sender->GetMap();
-        if (!map)
-            return;
 
-        uint32 checkedPlayers = 0;
-        const uint32 MAX_PLAYERS_TO_CHECK = 100;
-
-        map->DoForAllPlayers([&](Player* potentialBot) {
-            if (checkedPlayers++ >= MAX_PLAYERS_TO_CHECK)
+        // Find a nearby bot to respond
+        Player* respondingBot = nullptr;
+        
+        // Check if this is a distance-dependent chat type
+        bool requiresDistance = (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL);
+        
+        if (requiresDistance)
+        {
+            // For local chat, find a nearby bot with strict distance check
+            float chatRange = (originalChatType == CHAT_MSG_SAY) ? LLM_Config.ChatRange : LLM_Config.ChatRange * 2;
+            respondingBot = GetNearbyBot(sender, chatRange);
+            
+            if (!respondingBot)
+            {
+                LOG_DEBUG("module.llm_chat", "No nearby bots found within range %f", chatRange);
+                return;
+            }
+        }
+        else
+        {
+            // For other chat types, find any available bot
+            std::vector<Player*> availableBots;
+            Map* map = sender->GetMap();
+            if (!map)
                 return;
 
-            if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
-                return;
+            uint32 checkedPlayers = 0;
+            const uint32 MAX_PLAYERS_TO_CHECK = 100;
 
-            if (potentialBot->GetSession()->IsBot())
-            {
-                bool isEligible = false;
-                
-                switch (originalChatType)
+            map->DoForAllPlayers([&](Player* potentialBot) {
+                if (checkedPlayers++ >= MAX_PLAYERS_TO_CHECK)
+                    return;
+
+                if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
+                    return;
+
+                if (potentialBot->GetSession()->IsBot())
                 {
-                    case CHAT_MSG_PARTY:
-                    case CHAT_MSG_PARTY_LEADER:
-                        isEligible = potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup();
-                        break;
-                        
-                    case CHAT_MSG_GUILD:
-                        isEligible = potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild();
-                        break;
-                        
-                    case CHAT_MSG_CHANNEL:
-                        // For channel chat, any bot can respond
-                        isEligible = true;
-                        break;
-                        
-                    case CHAT_MSG_WHISPER:
-                        // For whispers, any bot can respond
-                        isEligible = true;
-                        break;
-                        
-                    default:
-                        isEligible = true;
-                        break;
-                }
-
-                if (isEligible)
-                {
-                    availableBots.push_back(potentialBot);
-                }
-            }
-        });
-
-        if (!availableBots.empty())
-        {
-            uint32 randomIndex = urand(0, availableBots.size() - 1);
-            respondingBot = availableBots[randomIndex];
-        }
-    }
-
-    if (!respondingBot || !respondingBot->IsInWorld())
-    {
-        LOG_INFO("module.llm_chat", "No eligible bots found to respond");
-        return;
-    }
-
-    // Double check distance only for distance-dependent chat types
-    if (requiresDistance &&
-        sender->GetDistance(respondingBot) > LLM_Config.ChatRange * (originalChatType == CHAT_MSG_YELL ? 2 : 1))
-    {
-        LOG_INFO("module.llm_chat", "Selected bot is too far away");
-        return;
-    }
-
-    LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
-
-    WorldPacket data;
-    switch (originalChatType)
-    {
-        case CHAT_MSG_SAY:
-        {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
-            LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
-            break;
-        }
-        case CHAT_MSG_YELL:
-        {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
-            LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
-            break;
-        }
-        case CHAT_MSG_PARTY:
-        case CHAT_MSG_PARTY_LEADER:
-        {
-            if (Group* group = respondingBot->GetGroup())
-            {
-                if (group == sender->GetGroup())
-                {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-                    group->BroadcastPacket(&data, false);
-                    LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
-                }
-            }
-            break;
-        }
-        case CHAT_MSG_GUILD:
-        {
-            if (Guild* guild = respondingBot->GetGuild())
-            {
-                if (guild == sender->GetGuild())
-                {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-                    guild->BroadcastPacket(&data);
-                    LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
-                }
-            }
-            break;
-        }
-        case CHAT_MSG_WHISPER:
-        {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-            sender->GetSession()->SendPacket(&data);
-            LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
-            break;
-        }
-        case CHAT_MSG_CHANNEL:
-        {
-            if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-            {
-                // Extract channel name from the message
-                std::string channelName;
-                std::string message = msg;
-                
-                // Channel messages come in format: "ChannelName Message"
-                size_t spacePos = message.find(' ');
-                if (spacePos != std::string::npos)
-                {
-                    channelName = message.substr(0, spacePos);
-                    message = message.substr(spacePos + 1);
+                    bool isEligible = false;
                     
-                    if (Channel* channel = cMgr->GetChannel(channelName, sender))
+                    switch (originalChatType)
                     {
-                        // Build the chat packet
-                        WorldPacket data;
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
-                            LANG_UNIVERSAL,
-                            respondingBot,
-                            nullptr,
-                            response,
-                            0,
-                            channelName);
+                        case CHAT_MSG_PARTY:
+                        case CHAT_MSG_PARTY_LEADER:
+                            isEligible = potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup();
+                            break;
+                            
+                        case CHAT_MSG_GUILD:
+                            isEligible = potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild();
+                            break;
+                            
+                        case CHAT_MSG_CHANNEL:
+                            // For channel chat, any bot can respond
+                            isEligible = true;
+                            break;
+                            
+                        case CHAT_MSG_WHISPER:
+                            // For whispers, any bot can respond
+                            isEligible = true;
+                            break;
+                            
+                        default:
+                            isEligible = true;
+                            break;
+                    }
 
-                        // Send to all players in the channel
-                        Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
-                        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                        {
-                            if (Player* player = itr->GetSource())
-                            {
-                                // Check if player has a session and is in the same channel
-                                if (player->GetSession() && cMgr->GetChannel(channelName, player))
-                                {
-                                    player->GetSession()->SendPacket(&data);
-                                }
-                            }
-                        }
-                        
-                        LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
-                            respondingBot->GetName().c_str(), 
-                            channelName.c_str(),
-                            response.c_str());
+                    if (isEligible)
+                    {
+                        availableBots.push_back(potentialBot);
                     }
                 }
-            }
-            break;
-        }
-        default:
-        {
-            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
-            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
-            LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
-            break;
-        }
-    }
+            });
 
-    LOG_INFO("module.llm_chat", "Finished sending bot response\n");
+            if (!availableBots.empty())
+            {
+                uint32 randomIndex = urand(0, availableBots.size() - 1);
+                respondingBot = availableBots[randomIndex];
+            }
+        }
+
+        if (!respondingBot || !respondingBot->IsInWorld())
+        {
+            LOG_INFO("module.llm_chat", "No eligible bots found to respond");
+            return;
+        }
+
+        // Double check distance only for distance-dependent chat types
+        if (requiresDistance &&
+            sender->GetDistance(respondingBot) > LLM_Config.ChatRange * (originalChatType == CHAT_MSG_YELL ? 2 : 1))
+        {
+            LOG_INFO("module.llm_chat", "Selected bot is too far away");
+            return;
+        }
+
+        LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
+
+        WorldPacket data;
+        switch (originalChatType)
+        {
+            case CHAT_MSG_SAY:
+            {
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
+                LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
+                break;
+            }
+            case CHAT_MSG_YELL:
+            {
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
+                LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
+                break;
+            }
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+            {
+                if (Group* group = respondingBot->GetGroup())
+                {
+                    if (group == sender->GetGroup())
+                    {
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                        group->BroadcastPacket(&data, false);
+                        LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
+                    }
+                }
+                break;
+            }
+            case CHAT_MSG_GUILD:
+            {
+                if (Guild* guild = respondingBot->GetGuild())
+                {
+                    if (guild == sender->GetGuild())
+                    {
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                        guild->BroadcastPacket(&data);
+                        LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
+                    }
+                }
+                break;
+            }
+            case CHAT_MSG_WHISPER:
+            {
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                sender->GetSession()->SendPacket(&data);
+                LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
+                break;
+            }
+            case CHAT_MSG_CHANNEL:
+            {
+                if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+                {
+                    // Extract channel name from the message
+                    std::string channelName;
+                    std::string message = msg;
+                    
+                    // Channel messages come in format: "ChannelName Message"
+                    size_t spacePos = message.find(' ');
+                    if (spacePos != std::string::npos)
+                    {
+                        channelName = message.substr(0, spacePos);
+                        message = message.substr(spacePos + 1);
+                        
+                        if (Channel* channel = cMgr->GetChannel(channelName, sender))
+                        {
+                            // Build the chat packet
+                            WorldPacket data;
+                            ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
+                                LANG_UNIVERSAL,
+                                respondingBot,
+                                nullptr,
+                                response,
+                                0,
+                                channelName);
+
+                            // Send to all players in the channel
+                            Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
+                            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                            {
+                                if (Player* player = itr->GetSource())
+                                {
+                                    // Check if player has a session and is in the same channel
+                                    if (player->GetSession() && cMgr->GetChannel(channelName, player))
+                                    {
+                                        player->GetSession()->SendPacket(&data);
+                                    }
+                                }
+                            }
+                            
+                            LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
+                                respondingBot->GetName().c_str(), 
+                                channelName.c_str(),
+                                response.c_str());
+                        }
+                    }
+                }
+                break;
+            }
+            default:
+            {
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, response, LANG_UNIVERSAL, CHAT_TAG_NONE, respondingBot->GetGUID(), respondingBot->GetName());
+                respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
+                LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
+                break;
+            }
+        }
+
+        LOG_INFO("module.llm_chat", "Finished sending bot response\n");
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("module.llm_chat", "Exception in SendAIResponse: %s", e.what());
+        return;
+    }
+    catch (...)
+    {
+        LOG_ERROR("module.llm_chat", "Unknown exception in SendAIResponse");
+        return;
+    }
 }
 
 void Add_LLMChatScripts()
