@@ -709,8 +709,14 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
-                        // Use the public Announce method to send the message
-                        channel->Announce(respondingBot, response.c_str());
+                        // Build the chat packet for channel message
+                        WorldPacket data;
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, 
+                            respondingBot->GetChatTag(), respondingBot->GetGUID(), respondingBot->GetName(), 
+                            ObjectGuid(), "", channelName.c_str());
+                        
+                        // Send to all channel members
+                        channel->SendToAll(data);
                         LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
                             respondingBot->GetName().c_str(), 
                             channelName.c_str(),
