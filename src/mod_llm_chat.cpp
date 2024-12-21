@@ -389,13 +389,23 @@ public:
             {
                 case CHAT_MSG_SAY:
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, 
+                        LANG_UNIVERSAL,
+                        player->GetGUID(),
+                        ObjectGuid::Empty,
+                        message,
+                        0);
                     player->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
                     break;
                 }
                 case CHAT_MSG_YELL:
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, 
+                        LANG_UNIVERSAL,
+                        player->GetGUID(),
+                        ObjectGuid::Empty,
+                        message,
+                        0);
                     player->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
                     break;
                 }
@@ -404,7 +414,12 @@ public:
                 {
                     if (Group* group = player->GetGroup())
                     {
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, 
+                            LANG_UNIVERSAL,
+                            player->GetGUID(),
+                            ObjectGuid::Empty,
+                            message,
+                            0);
                         group->BroadcastPacket(&data, false);
                     }
                     break;
@@ -413,7 +428,12 @@ public:
                 {
                     if (Guild* guild = player->GetGuild())
                     {
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, 
+                            LANG_UNIVERSAL,
+                            player->GetGUID(),
+                            ObjectGuid::Empty,
+                            message,
+                            0);
                         guild->BroadcastPacket(&data);
                     }
                     break;
@@ -425,7 +445,12 @@ public:
                     {
                         if (Player* target = ObjectAccessor::FindPlayer(targetGuid))
                         {
-                            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, message, LANG_UNIVERSAL, CHAT_TAG_NONE, player->GetGUID(), player->GetName());
+                            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, 
+                                LANG_UNIVERSAL,
+                                player->GetGUID(),
+                                target->GetGUID(),
+                                message,
+                                0);
                             target->GetSession()->SendPacket(&data);
                         }
                     }
@@ -445,14 +470,13 @@ public:
                             if (Channel* channel = cMgr->GetChannel(channelName, player))
                             {
                                 ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
-                                    message.substr(spacePos + 1),
                                     LANG_UNIVERSAL,
-                                    CHAT_TAG_NONE,
                                     player->GetGUID(),
-                                    player->GetName(),
-                                    nullptr,
-                                    "",
-                                    channelName);
+                                    ObjectGuid::Empty,
+                                    message.substr(spacePos + 1),
+                                    0,
+                                    channelName,
+                                    DEFAULT_LOCALE);
 
                                 // Send to all players in the channel
                                 SessionMap sessions = sWorld->GetAllSessions();
