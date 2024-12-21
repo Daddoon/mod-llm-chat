@@ -770,7 +770,27 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                         channelName = message.substr(0, spacePos);
                         message = message.substr(spacePos + 1);
                         
-                        if (Channel* channel = cMgr->GetChannel(channelName, sender))
+                        // Get the channel
+                        Channel* channel = cMgr->GetChannel(channelName, sender);
+                        if (!channel)
+                        {
+                            // Try to get the channel directly from the player's session
+                            if (WorldSession* session = sender->GetSession())
+                            {
+                                // Handle Trade channel specifically
+                                if (channelName == "Trade")
+                                {
+                                    channel = cMgr->GetChannel("Trade", sender, true);
+                                }
+                                else
+                                {
+                                    // Try to get other global channels
+                                    channel = cMgr->GetChannel(channelName, sender, true);
+                                }
+                            }
+                        }
+
+                        if (channel)
                         {
                             // Build the chat packet
                             WorldPacket data;
@@ -783,16 +803,16 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                                 channelName);
 
                             // Send to all players in the channel
-                            Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
-                            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                            SessionMap sessions = sWorld->GetAllSessions();
+                            for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
                             {
-                                if (Player* player = itr->GetSource())
+                                if (!itr->second || !itr->second->GetPlayer())
+                                    continue;
+
+                                Player* player = itr->second->GetPlayer();
+                                if (player->IsInWorld() && channel->HasPlayer(player))
                                 {
-                                    // Check if player has a session and is in the same channel
-                                    if (player->GetSession() && cMgr->GetChannel(channelName, player))
-                                    {
-                                        player->GetSession()->SendPacket(&data);
-                                    }
+                                    player->GetSession()->SendPacket(&data);
                                 }
                             }
                             
