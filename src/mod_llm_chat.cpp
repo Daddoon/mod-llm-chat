@@ -592,8 +592,10 @@ public:
                 // Clear any current actions
                 responder->InterruptNonMeleeSpells(false);
                 responder->RemoveAurasByType(SPELL_AURA_MOUNTED);
-                responder->RemoveAurasByType(SPELL_AURA_EATING);
-                responder->RemoveAurasByType(SPELL_AURA_DRINKING);
+                
+                // Remove food/drink auras (using actual aura IDs)
+                responder->RemoveAura(433);  // Food
+                responder->RemoveAura(430);  // Drink
             }
         }
 
