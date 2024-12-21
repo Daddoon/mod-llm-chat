@@ -614,7 +614,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         bool requiresDistance = (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL);
 
         map->DoForAllPlayers([&](Player* potentialBot) {
-            if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
+            if (!potentialBot || !potentialBot->IsInWorld())
                 return;
 
             // Skip if this is the original sender
@@ -622,7 +622,7 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                 return;
 
             // Only allow actual bots to respond
-            if (potentialBot->GetSession()->IsBot())
+            if (potentialBot->GetSession() && potentialBot->GetSession()->IsBot())
             {
                 bool isEligible = false;
                 
@@ -634,31 +634,33 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                 }
                 else
                 {
+                    // For other chat types, check appropriate conditions
                     switch (originalChatType)
                     {
                         case CHAT_MSG_PARTY:
                         case CHAT_MSG_PARTY_LEADER:
-                            isEligible = potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup();
+                            isEligible = (potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup());
                             break;
+                            
                         case CHAT_MSG_GUILD:
-                            isEligible = potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild();
+                            isEligible = (potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild());
                             break;
+                            
                         case CHAT_MSG_CHANNEL:
-                            // For channel chat, check if bot is in the same channel
+                            // For channels, check if bot is in the same channel
                             if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
                             {
-                                // Extract channel name from the message
-                                std::string channelName;
-                                std::string message = msg;
-                                size_t spacePos = message.find(' ');
+                                size_t spacePos = msg.find(' ');
                                 if (spacePos != std::string::npos)
                                 {
-                                    channelName = message.substr(0, spacePos);
-                                    isEligible = (cMgr->GetChannel(channelName, potentialBot) != nullptr);
+                                    std::string channelName = msg.substr(0, spacePos);
+                                    Channel* channel = cMgr->GetChannel(channelName, potentialBot);
+                                    isEligible = (channel != nullptr);
                                 }
                             }
                             break;
-                        case CHAT_MSG_WHISPER:
+                            
+                        default:
                             isEligible = true;
                             break;
                     }
@@ -672,6 +674,13 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             }
         });
 
+        // If no eligible bots found, return
+        if (eligibleBots.empty())
+        {
+            LOG_INFO("module.llm_chat", "No eligible bots found to respond");
+            return;
+        }
+
         // Shuffle the eligible bots list
         if (eligibleBots.size() > 1)
         {
@@ -681,34 +690,77 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         // Limit the number of responders to available bots
         numResponders = std::min(numResponders, (uint32)eligibleBots.size());
 
-        // Have each selected bot respond with a different personality
+        // Have each selected bot respond
         for (uint32 i = 0; i < numResponders; ++i)
         {
             Player* respondingBot = eligibleBots[i];
             
-            // Select a random personality for this bot
-            BotPersonality personality = BOT_PERSONALITIES[urand(0, BOT_PERSONALITIES.size() - 1)];
+            // Get AI response
+            std::string response = QueryLLM(msg, sender->GetName());
             
-            // Add personality to the context
-            std::string contextPrompt = personality.prompt + "\n\n" +
-                "You are responding to: " + sender->GetName() + ": " + msg + "\n" +
-                "Keep responses very short (1-2 lines max)\n" +
-                "Use common WoW abbreviations when appropriate\n" +
-                "Stay in character and be natural";
-
-            // Get AI response with this personality
-            std::string response = QueryLLM(contextPrompt, sender->GetName());
-            
-            if (!response.empty() && response.find("Error") == std::string::npos)
+            if (response.empty() || response.find("Error") != std::string::npos)
             {
-                // Add a small delay between responses (100-500ms per bot)
-                uint32 delay = 100 * (i + 1) + urand(0, 400);
-                
-                respondingBot->m_Events.AddEvent(
-                    new AIResponseEvent(respondingBot, response, originalChatType, team),
-                    respondingBot->m_Events.CalculateTime(delay)
-                );
+                LOG_ERROR("module.llm_chat", "Failed to get AI response for bot %s", respondingBot->GetName().c_str());
+                continue;
             }
+
+            // Add response prefix
+            std::string prefixedResponse = LLM_Config.ResponsePrefix + response;
+            
+            // Add a small delay between responses
+            uint32 delay = 100 * (i + 1) + urand(0, 400);
+            
+            // Schedule the response
+            respondingBot->m_Events.AddEvent([respondingBot, prefixedResponse, originalChatType, msg, team]() {
+                if (!respondingBot || !respondingBot->IsInWorld())
+                    return;
+
+                switch (originalChatType)
+                {
+                    case CHAT_MSG_SAY:
+                        respondingBot->Say(prefixedResponse, LANG_UNIVERSAL);
+                        break;
+                        
+                    case CHAT_MSG_YELL:
+                        respondingBot->Yell(prefixedResponse, LANG_UNIVERSAL);
+                        break;
+                        
+                    case CHAT_MSG_PARTY:
+                    case CHAT_MSG_PARTY_LEADER:
+                        if (Group* group = respondingBot->GetGroup())
+                        {
+                            WorldPacket data;
+                            ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(originalChatType), 
+                                LANG_UNIVERSAL, respondingBot->GetGUID(), ObjectGuid::Empty, 
+                                prefixedResponse, 0);
+                            group->BroadcastPacket(&data, false);
+                        }
+                        break;
+                        
+                    case CHAT_MSG_GUILD:
+                        if (Guild* guild = respondingBot->GetGuild())
+                        {
+                            guild->BroadcastToGuild(respondingBot->GetSession(), false, 
+                                prefixedResponse, LANG_UNIVERSAL);
+                        }
+                        break;
+                        
+                    case CHAT_MSG_CHANNEL:
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+                        {
+                            size_t spacePos = msg.find(' ');
+                            if (spacePos != std::string::npos)
+                            {
+                                std::string channelName = msg.substr(0, spacePos);
+                                if (Channel* channel = cMgr->GetChannel(channelName, respondingBot))
+                                {
+                                    channel->Say(respondingBot->GetGUID(), prefixedResponse, LANG_UNIVERSAL);
+                                }
+                            }
+                        }
+                        break;
+                }
+            }, respondingBot->m_Events.CalculateTime(delay));
         }
     }
     catch (const std::exception& e)
