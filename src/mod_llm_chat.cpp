@@ -404,7 +404,7 @@ public:
                         GetChatTypeString(type).c_str(),
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeam() == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE, type);
+                    SendAIResponse(player, msg, player->GetTeamId(), type);
                 }
                 break;
             }
