@@ -355,6 +355,48 @@ public:
     }
 };
 
+// Add this class definition before the LLMChatModule class
+class AIResponseEvent : public BasicEvent
+{
+public:
+    AIResponseEvent(Player* p, std::string m, uint32 t, TeamId team) 
+        : player(p), message(m), type(t), teamId(team) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (player && player->IsInWorld())
+        {
+            LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
+                GetChatTypeString(type).c_str(),
+                player->GetName().c_str(), 
+                message.c_str());
+            SendAIResponse(player, message, teamId, type);
+        }
+        return true;
+    }
+
+private:
+    Player* player;
+    std::string message;
+    uint32 type;
+    TeamId teamId;
+
+    static std::string GetChatTypeString(uint32 type)
+    {
+        switch (type)
+        {
+            case CHAT_MSG_SAY: return "SAY";
+            case CHAT_MSG_YELL: return "YELL";
+            case CHAT_MSG_PARTY: return "PARTY";
+            case CHAT_MSG_PARTY_LEADER: return "PARTY_LEADER";
+            case CHAT_MSG_GUILD: return "GUILD";
+            case CHAT_MSG_WHISPER: return "WHISPER";
+            case CHAT_MSG_CHANNEL: return "CHANNEL";
+            default: return "UNKNOWN";
+        }
+    }
+};
+
 class LLMChatModule : public PlayerScript
 {
 public:
@@ -395,19 +437,10 @@ public:
                 {
                     // Let the original message go through first
                     // Then process the AI response in the next update
-                    player->m_Events.AddEvent(new BasicEvent{
-                        [player, message, type, this]() -> bool {
-                            if (player && player->IsInWorld())
-                            {
-                                LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
-                                    GetChatTypeString(type).c_str(),
-                                    player->GetName().c_str(), 
-                                    message.c_str());
-                                SendAIResponse(player, message, player->GetTeamId(), type);
-                            }
-                            return true;
-                        }
-                    }, player->m_Events.CalculateTime(100)); // 100ms delay
+                    player->m_Events.AddEvent(
+                        new AIResponseEvent(player, message, type, player->GetTeamId()),
+                        player->m_Events.CalculateTime(100) // 100ms delay
+                    );
                 }
                 break;
             }
