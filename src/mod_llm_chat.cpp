@@ -411,21 +411,36 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     if (!map)
         return nullptr;
 
-    // Get nearby players using grid search
-    map->DoForAllPlayers([&nearbyBots, player, maxDistance](Player* nearby) {
+    // Get player's position
+    float playerX = player->GetPositionX();
+    float playerY = player->GetPositionY();
+    float playerZ = player->GetPositionZ();
+
+    // Get nearby players using grid search with strict distance check
+    Cell::VisitWorldObjects(player, [&nearbyBots, player, maxDistance, playerX, playerY, playerZ](WorldObject* obj) {
+        if (!obj || !obj->IsPlayer())
+            return;
+
+        Player* nearby = obj->ToPlayer();
         if (!nearby || nearby == player)
             return;
 
-        // Check distance
-        if (player->GetDistance(nearby) > maxDistance)
+        // Strict distance check in 3D space
+        float distance = std::sqrt(
+            std::pow(playerX - nearby->GetPositionX(), 2) +
+            std::pow(playerY - nearby->GetPositionY(), 2) +
+            std::pow(playerZ - nearby->GetPositionZ(), 2)
+        );
+
+        if (distance > maxDistance)
             return;
 
-        // Check if it's a playerbot using session
+        // Check if it's a playerbot
         if (nearby->GetSession() && nearby->GetSession()->IsBot())
         {
             nearbyBots.push_back(nearby);
         }
-    });
+    }, maxDistance);
 
     if (nearbyBots.empty())
         return nullptr;
@@ -437,6 +452,12 @@ Player* GetNearbyBot(Player* player, float maxDistance)
 
 void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
 {
+    if (!sender || !sender->IsInWorld() || msg.empty())
+    {
+        LOG_ERROR("module.llm_chat", "Invalid sender or empty message");
+        return;
+    }
+
     LOG_INFO("module.llm_chat", "Starting AI Response - Player: %s, Message: %s, Type: %u", 
         sender->GetName().c_str(), 
         msg.c_str(),
@@ -461,25 +482,34 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     
     if (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL)
     {
-        // For local chat, find a nearby bot
-        respondingBot = GetNearbyBot(sender, LLM_Config.ChatRange);
+        // For local chat, find a nearby bot with strict distance check
+        float chatRange = (originalChatType == CHAT_MSG_SAY) ? LLM_Config.ChatRange : LLM_Config.ChatRange * 2;
+        respondingBot = GetNearbyBot(sender, chatRange);
+        
         if (!respondingBot)
         {
-            LOG_INFO("module.llm_chat", "No nearby bots found to respond");
+            LOG_INFO("module.llm_chat", "No nearby bots found within range %f", chatRange);
             return;
         }
     }
     else
     {
-        // For other chat types, find any available bot
+        // For other chat types, find any available bot with a limit
         std::vector<Player*> availableBots;
         Map* map = sender->GetMap();
         if (!map)
             return;
 
-        // Get all players in the map
-        map->DoForAllPlayers([&availableBots, sender, originalChatType](Player* potentialBot) {
-            if (!potentialBot || !potentialBot->GetSession())
+        // Limit the number of players to check to prevent infinite loops
+        uint32 checkedPlayers = 0;
+        const uint32 MAX_PLAYERS_TO_CHECK = 100;
+
+        map->DoForAllPlayers([&](Player* potentialBot) {
+            // Break if we've checked too many players
+            if (checkedPlayers++ >= MAX_PLAYERS_TO_CHECK)
+                return;
+
+            if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
                 return;
 
             // Check if it's a bot
@@ -506,9 +536,17 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         }
     }
 
-    if (!respondingBot)
+    if (!respondingBot || !respondingBot->IsInWorld())
     {
         LOG_INFO("module.llm_chat", "No eligible bots found to respond");
+        return;
+    }
+
+    // Double check distance for local chat
+    if ((originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL) &&
+        sender->GetDistance(respondingBot) > LLM_Config.ChatRange * (originalChatType == CHAT_MSG_YELL ? 2 : 1))
+    {
+        LOG_INFO("module.llm_chat", "Selected bot is too far away");
         return;
     }
 
