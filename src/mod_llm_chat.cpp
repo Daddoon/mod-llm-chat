@@ -725,7 +725,8 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                         {
                             if (Player* player = itr->GetSource())
                             {
-                                if (player->GetSession() && channel->HasPlayer(player))
+                                // Check if player has a session and is in the same channel
+                                if (player->GetSession() && cMgr->GetChannel(channelName, player))
                                 {
                                     player->GetSession()->SendPacket(&data);
                                 }
