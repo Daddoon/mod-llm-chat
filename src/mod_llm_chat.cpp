@@ -709,10 +709,10 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
-                        // Build the chat packet for channel message
+                        // Build the chat packet for channel message using the correct signature
                         WorldPacket data;
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, 
-                            respondingBot->GetGUID(), respondingBot->GetName(), nullptr, nullptr, channelName.c_str());
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, LANG_UNIVERSAL, respondingBot, nullptr, 
+                            response, 0, channelName);
                         
                         // Send to all channel members
                         channel->SendToAll(&data);
