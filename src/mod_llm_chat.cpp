@@ -788,14 +788,6 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     respondingPlayer->m_Events.AddEvent(event, respondingPlayer->m_Events.CalculateTime(delay));
 }
 
-void Add_LLMChatScripts()
-{
-    new LLMChatAnnounce();
-    new LLMChatConfig();
-    new LLMChatModule();
-    new LLMChatPlayerScript();
-}
-
 class LLMChatPlayerScript : public PlayerScript
 {
 public:
@@ -819,7 +811,6 @@ public:
         if (!player || !player->IsInWorld() || !group)
             return;
       
-
         // Skip if message is empty or too short
         if (msg.empty() || msg.length() < 2)
             return;
@@ -854,3 +845,11 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 }; 
+
+void Add_LLMChatScripts()
+{
+    new LLMChatAnnounce();
+    new LLMChatConfig();
+    new LLMChatModule();
+    new LLMChatPlayerScript();
+} 
