@@ -481,47 +481,25 @@ public:
             return;
         }
 
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: '%s'", 
+        // Skip if this is an AI response to prevent loops
+        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
+        {
+            LOG_INFO("module.llm_chat", "Skipping AI response message");
+            return;
+        }
+
+        // Only process messages from real players to trigger bot responses
+        // Skip if the message is from a bot
+        if (player->GetSession() && player->GetSession()->IsBot())
+        {
+            LOG_INFO("module.llm_chat", "Skipping message from bot");
+            return;
+        }
+
+        LOG_INFO("module.llm_chat", "Chat received from player - Player: %s, Type: %s, Message: '%s'", 
             player->GetName().c_str(), 
             GetChatTypeString(type).c_str(), 
             msg.c_str());
-
-        // Store the message for processing
-        std::string message = msg;
-
-        // Check if this is an AI response
-        bool isAIResponse = !LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0;
-        bool isBot = player->GetSession() && player->GetSession()->IsBot();
-
-        // Handle AI response logic
-        if (isAIResponse)
-        {
-            LOG_INFO("module.llm_chat", "AI response detected from %s", player->GetName().c_str());
-            
-            // For AI responses, we'll have a lower chance of triggering another response
-            // This helps prevent infinite loops while still allowing some back-and-forth
-            static const float AI_RESPONSE_CHANCE = 0.3f; // 30% chance for AI to respond to AI
-            
-            if (urand(0, 100) > (AI_RESPONSE_CHANCE * 100))
-            {
-                LOG_INFO("module.llm_chat", "Skipping AI response due to random chance");
-                return;
-            }
-
-            // Remove the AI prefix for processing
-            message = msg.substr(LLM_Config.ResponsePrefix.length());
-        }
-        else if (isBot)
-        {
-            // For regular bot messages, use standard response chance
-            static const float BOT_RESPONSE_CHANCE = 0.5f; // 50% chance for regular bot messages
-            
-            if (urand(0, 100) > (BOT_RESPONSE_CHANCE * 100))
-            {
-                LOG_INFO("module.llm_chat", "Skipping bot message due to random chance");
-                return;
-            }
-        }
 
         // Handle different chat types
         switch (type)
@@ -534,29 +512,23 @@ public:
             case CHAT_MSG_WHISPER:
             case CHAT_MSG_CHANNEL:
             {
-                if (!message.empty())
+                LOG_INFO("module.llm_chat", "Processing player message for bot responses - Type: %s, Message: '%s'", 
+                    GetChatTypeString(type).c_str(), msg.c_str());
+
+                // Add a small delay before processing
+                uint32 delay = urand(100, 500);
+                LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+
+                // Create and add the event
+                AIResponseEvent* event = new AIResponseEvent(player, msg, type, player->GetTeamId());
+                if (event)
                 {
-                    LOG_INFO("module.llm_chat", "Processing message for AI response - Type: %s, Message: '%s'", 
-                        GetChatTypeString(type).c_str(), message.c_str());
-
-                    // Add a varying delay before processing to make conversations feel more natural
-                    uint32 baseDelay = isAIResponse ? 1000 : 100; // Longer delay for AI responses
-                    uint32 randomDelay = urand(100, 500);
-                    uint32 totalDelay = baseDelay + randomDelay;
-
-                    LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", totalDelay);
-
-                    // Create and add the event
-                    AIResponseEvent* event = new AIResponseEvent(player, message, type, player->GetTeamId());
-                    if (event)
-                    {
-                        player->m_Events.AddEvent(event, player->m_Events.CalculateTime(totalDelay));
-                        LOG_INFO("module.llm_chat", "Successfully added AI response event");
-                    }
-                    else
-                    {
-                        LOG_ERROR("module.llm_chat", "Failed to create AI response event");
-                    }
+                    player->m_Events.AddEvent(event, player->m_Events.CalculateTime(delay));
+                    LOG_INFO("module.llm_chat", "Successfully added AI response event");
+                }
+                else
+                {
+                    LOG_ERROR("module.llm_chat", "Failed to create AI response event");
                 }
                 break;
             }
