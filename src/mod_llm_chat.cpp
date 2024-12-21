@@ -534,8 +534,10 @@ public:
 
     static void LogChat(std::string const& playerName, std::string const& input, std::string const& response) {
         if (LLM_Config.LogLevel >= 2) {
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Player: %s, Input: %s", playerName.c_str(), input.c_str()).c_str());
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("AI Response: %s", response.c_str()).c_str());
+            std::string inputMsg = "Player " + playerName + " says: " + input;
+            std::string responseMsg = "AI Response: " + response;
+            LOG_INFO("module.llm_chat", "%s", inputMsg.c_str());
+            LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
         }
     }
 };
