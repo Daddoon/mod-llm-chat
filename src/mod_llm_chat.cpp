@@ -577,6 +577,9 @@ public:
             return true;
         }
 
+        LOG_INFO("module.llm_chat", "Executing response from %s: %s", 
+            responder->GetName().c_str(), response.c_str());
+
         switch (chatType)
         {
             case CHAT_MSG_SAY:
@@ -621,6 +624,8 @@ public:
                 }
                 break;
         }
+
+        LOG_INFO("module.llm_chat", "Successfully delivered response from %s", responder->GetName().c_str());
         return true;
     }
 };
@@ -675,17 +680,17 @@ public:
             return;
         }
 
-        // Only process messages from real players
-        if (!player->GetSession() || player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+        // Only process messages from players with valid sessions
+        if (!player->GetSession())
         {
-            LOG_INFO("module.llm_chat", "Skipping message from GM or invalid session");
+            LOG_INFO("module.llm_chat", "Skipping message from invalid session");
             return;
         }
 
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Chat received from player - Player: %s, Type: %s, Message: '%s'", 
+        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: %s", 
             player->GetName().c_str(), 
             GetChatTypeString(type).c_str(), 
-            msg.c_str()).c_str());
+            msg.c_str());
 
         // Handle different chat types
         switch (type)
@@ -698,12 +703,12 @@ public:
             case CHAT_MSG_WHISPER:
             case CHAT_MSG_CHANNEL:
             {
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Processing player message for bot responses - Type: %s, Message: '%s'", 
-                    GetChatTypeString(type).c_str(), msg.c_str()).c_str());
+                LOG_INFO("module.llm_chat", "Processing message - Type: %s, Content: %s", 
+                    GetChatTypeString(type).c_str(), msg.c_str());
 
                 // Add a small delay before processing
                 uint32 delay = urand(100, 500);
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Adding AI response event with delay: %u ms", delay).c_str());
+                LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
 
                 // Create and add the event
                 TriggerResponseEvent* event = new TriggerResponseEvent(player, msg, type);
@@ -713,7 +718,7 @@ public:
                 break;
             }
             default:
-                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Ignoring unsupported chat type: %u", type).c_str());
+                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
                 break;
         }
     }
@@ -854,12 +859,14 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     // Check if we've reached the maximum rounds for this conversation
     if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
     {
-        LOG_DEBUG("module.llm_chat", "Maximum conversation rounds reached for: %s", conversationKey.c_str());
+        LOG_INFO("module.llm_chat", "Maximum conversation rounds reached for conversation with %s", sender->GetName().c_str());
         return;
     }
     
     // Increment the conversation round counter
     conversationRounds[conversationKey]++;
+
+    LOG_INFO("module.llm_chat", "Player %s says: %s", sender->GetName().c_str(), msg.c_str());
 
     // Get all eligible bots
     std::vector<Player*> eligibleBots;
@@ -893,9 +900,11 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
 
     if (eligibleBots.empty())
     {
-        LOG_DEBUG("module.llm_chat", "No eligible bots found to respond");
+        LOG_INFO("module.llm_chat", "No eligible bots found to respond to %s", sender->GetName().c_str());
         return;
     }
+
+    LOG_INFO("module.llm_chat", "Found %u eligible bots to respond", static_cast<uint32>(eligibleBots.size()));
 
     // Randomly select up to MaxResponsesPerMessage bots
     std::random_shuffle(eligibleBots.begin(), eligibleBots.end());
@@ -905,17 +914,30 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     {
         // Apply response chance
         if (urand(1, 100) > LLM_Config.ResponseChance)
+        {
+            LOG_INFO("module.llm_chat", "Bot %s skipped response due to chance", eligibleBots[i]->GetName().c_str());
             continue;
+        }
 
         Player* respondingBot = eligibleBots[i];
         
         // Get AI response
         std::string response = QueryLLM(msg, sender->GetName());
         if (response.empty())
+        {
+            LOG_INFO("module.llm_chat", "Bot %s got empty response from LLM", respondingBot->GetName().c_str());
             continue;
+        }
+
+        LOG_INFO("module.llm_chat", "Bot %s responds to %s: %s", 
+            respondingBot->GetName().c_str(), 
+            sender->GetName().c_str(), 
+            response.c_str());
 
         // Add a random delay between 1-3 seconds, increasing with each responder
         uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
+        LOG_INFO("module.llm_chat", "Scheduling response from %s with %u ms delay", 
+            respondingBot->GetName().c_str(), delay);
 
         // Schedule the response
         BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
