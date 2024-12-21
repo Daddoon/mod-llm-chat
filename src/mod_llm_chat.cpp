@@ -404,6 +404,28 @@ public:
     }
 };
 
+// Add this class definition before the LLMChatModule class
+class TriggerResponseEvent : public BasicEvent
+{
+    Player* player;
+    std::string message;
+    uint32 chatType;
+    TeamId team;
+
+public:
+    TriggerResponseEvent(Player* p, std::string msg, uint32 type) 
+        : player(p), message(msg), chatType(type), team(p->GetTeamId()) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (!player || !player->IsInWorld())
+            return true;
+
+        SendAIResponse(player, message, team, chatType);
+        return true;
+    }
+};
+
 class LLMChatModule : public PlayerScript
 {
 public:
@@ -459,18 +481,13 @@ public:
                 LOG_INFO("module.llm_chat", "Processing player message for bot responses - Type: %s, Message: '%s'", 
                     GetChatTypeString(type).c_str(), msg.c_str());
 
-                // Trigger SendAIResponse directly with a small delay
+                // Add a small delay before processing
                 uint32 delay = urand(100, 500);
                 LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
 
-                // Create and add the event to trigger SendAIResponse
-                player->m_Events.AddEvent(new BasicEvent(),
-                    player->m_Events.CalculateTime(delay),
-                    [player, msg, type]() {
-                        if (player && player->IsInWorld()) {
-                            SendAIResponse(player, msg, player->GetTeamId(), type);
-                        }
-                    });
+                // Create and add the event
+                TriggerResponseEvent* event = new TriggerResponseEvent(player, msg, type);
+                player->m_Events.AddEvent(event, player->m_Events.CalculateTime(delay));
 
                 LOG_INFO("module.llm_chat", "Successfully added AI response event");
                 break;
