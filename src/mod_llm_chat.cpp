@@ -725,8 +725,13 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                     {
                         if (Channel* channel = cMgr->GetChannel(channelName, sender))
                         {
-                            // Use Say method which is public and handles all the necessary checks
-                            channel->Say(sender, response.c_str(), LANG_UNIVERSAL);
+                            // Get AI response
+                            std::string response = QueryLLM(msg, sender->GetName());
+                            if (!response.empty())
+                            {
+                                // Use Say method which is public and handles all the necessary checks
+                                channel->Say(sender, response.c_str(), LANG_UNIVERSAL);
+                            }
                         }
                     }
                 }
