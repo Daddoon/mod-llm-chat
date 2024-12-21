@@ -701,8 +701,8 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             {
                 if (Channel* chn = cMgr->GetChannel(msg, sender))
                 {
-                    // Use Channel's Say method which handles all the proper packet building and sending
-                    chn->Say(respondingBot, response.c_str(), LANG_UNIVERSAL);
+                    // Pass the bot's GUID instead of the Player pointer
+                    chn->Say(respondingBot->GetGUID(), response, LANG_UNIVERSAL);
                     LOG_INFO("module.llm_chat", "Bot '%s' responds in channel: %s", respondingBot->GetName().c_str(), response.c_str());
                 }
             }
