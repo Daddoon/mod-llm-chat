@@ -421,8 +421,8 @@ Player* GetNearbyBot(Player* player, float maxDistance)
 
     // Get nearby players using grid search with strict distance check
     Acore::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
-    Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(player, nearbyBots, checker);
-    player->VisitNearbyObject(maxDistance, searcher);
+    Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(checker, nearbyBots);
+    Cell::VisitAllObjects(player, searcher, maxDistance);
 
     // Filter for bots only
     std::vector<Player*> botList;
@@ -563,41 +563,51 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     switch (originalChatType)
     {
         case CHAT_MSG_SAY:
-            respondingBot->Say(response, LANG_UNIVERSAL);
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
         case CHAT_MSG_YELL:
-            respondingBot->Yell(response, LANG_UNIVERSAL);
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, LANG_UNIVERSAL, respondingBot, nullptr, response);
+            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
             LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
         case CHAT_MSG_PARTY:
         case CHAT_MSG_PARTY_LEADER:
-            if (respondingBot->GetGroup() && respondingBot->GetGroup() == sender->GetGroup())
+            if (Group* group = respondingBot->GetGroup())
             {
-                ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
-                respondingBot->GetGroup()->BroadcastPacket(&data, false);
-                LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
+                if (group == sender->GetGroup())
+                {
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                    group->BroadcastPacket(&data, false);
+                    LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
+                }
             }
             break;
             
         case CHAT_MSG_GUILD:
-            if (respondingBot->GetGuild() && respondingBot->GetGuild() == sender->GetGuild())
+            if (Guild* guild = respondingBot->GetGuild())
             {
-                ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, respondingBot, nullptr, response);
-                respondingBot->GetGuild()->BroadcastPacket(&data);
-                LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
+                if (guild == sender->GetGuild())
+                {
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                    guild->BroadcastPacket(&data);
+                    LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
+                }
             }
             break;
             
         case CHAT_MSG_WHISPER:
-            respondingBot->Whisper(response, LANG_UNIVERSAL, sender);
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, respondingBot, nullptr, response);
+            sender->GetSession()->SendPacket(&data);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
             
         default:
-            respondingBot->Say(response, LANG_UNIVERSAL);
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+            respondingBot->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
             LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
     }
