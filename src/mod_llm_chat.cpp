@@ -709,16 +709,33 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
-                        // Use the session to send the channel message
-                        if (WorldSession* session = respondingBot->GetSession())
+                        // Build the chat packet
+                        WorldPacket data;
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
+                            LANG_UNIVERSAL,
+                            respondingBot,
+                            nullptr,
+                            response,
+                            0,
+                            channelName);
+
+                        // Send to all players in the channel
+                        Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
+                        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
                         {
-                            session->HandleMessagechatOpcode(CHAT_MSG_CHANNEL, LANG_UNIVERSAL, channelName, response);
-                            
-                            LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
-                                respondingBot->GetName().c_str(), 
-                                channelName.c_str(),
-                                response.c_str());
+                            if (Player* player = itr->GetSource())
+                            {
+                                if (player->GetSession() && channel->HasPlayer(player))
+                                {
+                                    player->GetSession()->SendPacket(&data);
+                                }
+                            }
                         }
+                        
+                        LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
+                            respondingBot->GetName().c_str(), 
+                            channelName.c_str(),
+                            response.c_str());
                     }
                 }
             }
