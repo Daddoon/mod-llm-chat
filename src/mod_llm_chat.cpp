@@ -384,14 +384,17 @@ public:
         if (!player || !player->IsInWorld())
             return true;
 
+        // Add response prefix to message
+        std::string prefixedMessage = LLM_Config.ResponsePrefix + message;
+
         switch (type)
         {
             case CHAT_MSG_SAY:
-                player->Say(message, LANG_UNIVERSAL);
+                player->Say(prefixedMessage, LANG_UNIVERSAL);
                 break;
 
             case CHAT_MSG_YELL:
-                player->Yell(message, LANG_UNIVERSAL);
+                player->Yell(prefixedMessage, LANG_UNIVERSAL);
                 break;
 
             case CHAT_MSG_PARTY:
@@ -404,7 +407,7 @@ public:
                         LANG_UNIVERSAL,
                         player->GetGUID(),
                         ObjectGuid::Empty,
-                        message,
+                        prefixedMessage,
                         0);
                     group->BroadcastPacket(&data, false);
                 }
@@ -413,14 +416,14 @@ public:
             case CHAT_MSG_GUILD:
                 if (Guild* guild = player->GetGuild())
                 {
-                    guild->BroadcastToGuild(player->GetSession(), false, message, LANG_UNIVERSAL);
+                    guild->BroadcastToGuild(player->GetSession(), false, prefixedMessage, LANG_UNIVERSAL);
                 }
                 break;
 
             case CHAT_MSG_WHISPER:
                 if (Player* target = ObjectAccessor::FindPlayer(player->GetTarget()))
                 {
-                    player->Whisper(message, LANG_UNIVERSAL, target);
+                    player->Whisper(prefixedMessage, LANG_UNIVERSAL, target);
                 }
                 break;
 
@@ -431,7 +434,7 @@ public:
                     if (spacePos != std::string::npos)
                     {
                         channelName = message.substr(0, spacePos);
-                        std::string channelMessage = message.substr(spacePos + 1);
+                        std::string channelMessage = prefixedMessage.substr(spacePos + 1);
                         
                         if (ChannelMgr* cMgr = ChannelMgr::forTeam(teamId))
                         {
@@ -467,6 +470,12 @@ public:
             return;
         }
 
+        // Skip if this is an AI response (to prevent infinite loops)
+        if (msg.find(LLM_Config.ResponsePrefix) == 0)
+        {
+            return;
+        }
+
         // Store the message for processing after it's sent
         std::string message = msg;
 
@@ -493,12 +502,8 @@ public:
             {
                 if (!message.empty())
                 {
-                    // Let the original message go through first
-                    // Then process the AI response in the next update
-                    player->m_Events.AddEvent(
-                        new AIResponseEvent(player, message, type, player->GetTeamId()),
-                        player->m_Events.CalculateTime(100) // 100ms delay
-                    );
+                    // Process the AI response with a delay
+                    SendAIResponse(player, message, player->GetTeamId(), type);
                 }
                 break;
             }
