@@ -381,123 +381,64 @@ public:
 
     bool Execute(uint64 /*time*/, uint32 /*diff*/) override
     {
-        if (player && player->IsInWorld())
+        if (!player || !player->IsInWorld())
+            return true;
+
+        ChatHandler handler(player->GetSession());
+
+        switch (type)
         {
-            // Build the chat packet
-            WorldPacket data;
-            switch (type)
-            {
-                case CHAT_MSG_SAY:
+            case CHAT_MSG_SAY:
+                handler.PSendSysMessage(LANG_SAY_SELF, message.c_str());
+                break;
+
+            case CHAT_MSG_YELL:
+                handler.PSendSysMessage(LANG_YELL_SELF, message.c_str());
+                break;
+
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+                if (Group* group = player->GetGroup())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, 
-                        LANG_UNIVERSAL,
-                        player->GetGUID(),
-                        ObjectGuid::Empty,
-                        message,
-                        0);
-                    player->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_SAY), true);
-                    break;
+                    handler.PSendSysMessage(LANG_PARTY, message.c_str());
                 }
-                case CHAT_MSG_YELL:
+                break;
+
+            case CHAT_MSG_GUILD:
+                if (Guild* guild = player->GetGuild())
                 {
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, 
-                        LANG_UNIVERSAL,
-                        player->GetGUID(),
-                        ObjectGuid::Empty,
-                        message,
-                        0);
-                    player->SendMessageToSetInRange(&data, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_YELL), true);
-                    break;
+                    guild->BroadcastToGuild(player->GetSession(), false, message, LANG_UNIVERSAL);
                 }
-                case CHAT_MSG_PARTY:
-                case CHAT_MSG_PARTY_LEADER:
+                break;
+
+            case CHAT_MSG_WHISPER:
+                if (Player* target = ObjectAccessor::FindPlayer(player->GetTarget()))
                 {
-                    if (Group* group = player->GetGroup())
+                    ChatHandler(target->GetSession()).PSendSysMessage(LANG_WHISPER_SELF, message.c_str());
+                }
+                break;
+
+            case CHAT_MSG_CHANNEL:
+                {
+                    std::string channelName;
+                    size_t spacePos = message.find(' ');
+                    if (spacePos != std::string::npos)
                     {
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, 
-                            LANG_UNIVERSAL,
-                            player->GetGUID(),
-                            ObjectGuid::Empty,
-                            message,
-                            0);
-                        group->BroadcastPacket(&data, false);
-                    }
-                    break;
-                }
-                case CHAT_MSG_GUILD:
-                {
-                    if (Guild* guild = player->GetGuild())
-                    {
-                        ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, 
-                            LANG_UNIVERSAL,
-                            player->GetGUID(),
-                            ObjectGuid::Empty,
-                            message,
-                            0);
-                        guild->BroadcastPacket(&data);
-                    }
-                    break;
-                }
-                case CHAT_MSG_WHISPER:
-                {
-                    // For whispers, we need to find the target player
-                    if (ObjectGuid targetGuid = player->GetTarget())
-                    {
-                        if (Player* target = ObjectAccessor::FindPlayer(targetGuid))
+                        channelName = message.substr(0, spacePos);
+                        std::string channelMessage = message.substr(spacePos + 1);
+                        
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(teamId))
                         {
-                            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, 
-                                LANG_UNIVERSAL,
-                                player->GetGUID(),
-                                target->GetGUID(),
-                                message,
-                                0);
-                            target->GetSession()->SendPacket(&data);
-                        }
-                    }
-                    break;
-                }
-                case CHAT_MSG_CHANNEL:
-                {
-                    if (ChannelMgr* cMgr = ChannelMgr::forTeam(teamId))
-                    {
-                        // Extract channel name from the message
-                        std::string channelName;
-                        size_t spacePos = message.find(' ');
-                        if (spacePos != std::string::npos)
-                        {
-                            channelName = message.substr(0, spacePos);
-                            
                             if (Channel* channel = cMgr->GetChannel(channelName, player))
                             {
-                                ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
-                                    LANG_UNIVERSAL,
-                                    player->GetGUID(),
-                                    ObjectGuid::Empty,
-                                    message.substr(spacePos + 1),
-                                    0,
-                                    channelName,
-                                    DEFAULT_LOCALE);
-
-                                // Send to all players in the channel
-                                SessionMap sessions = sWorld->GetAllSessions();
-                                for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
-                                {
-                                    if (!itr->second || !itr->second->GetPlayer())
-                                        continue;
-
-                                    Player* target = itr->second->GetPlayer();
-                                    if (target->IsInWorld() && cMgr->GetChannel(channelName, target))
-                                    {
-                                        target->GetSession()->SendPacket(&data);
-                                    }
-                                }
+                                channel->Say(player, channelMessage.c_str(), LANG_UNIVERSAL);
                             }
                         }
                     }
-                    break;
                 }
-            }
+                break;
         }
+
         return true;
     }
 
@@ -506,21 +447,6 @@ private:
     std::string message;
     uint32 type;
     TeamId teamId;
-
-    static std::string GetChatTypeString(uint32 type)
-    {
-        switch (type)
-        {
-            case CHAT_MSG_SAY: return "SAY";
-            case CHAT_MSG_YELL: return "YELL";
-            case CHAT_MSG_PARTY: return "PARTY";
-            case CHAT_MSG_PARTY_LEADER: return "PARTY_LEADER";
-            case CHAT_MSG_GUILD: return "GUILD";
-            case CHAT_MSG_WHISPER: return "WHISPER";
-            case CHAT_MSG_CHANNEL: return "CHANNEL";
-            default: return "UNKNOWN";
-        }
-    }
 };
 
 class LLMChatModule : public PlayerScript
