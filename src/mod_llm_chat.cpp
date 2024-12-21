@@ -417,13 +417,16 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     float playerZ = player->GetPositionZ();
 
     // Get nearby players using grid search with strict distance check
-    Cell::VisitWorldObjects(player, [&nearbyBots, player, maxDistance, playerX, playerY, playerZ](WorldObject* obj) {
-        if (!obj || !obj->IsPlayer())
-            return;
+    MaNGOS::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
+    MaNGOS::PlayerListSearcher<MaNGOS::AnyPlayerInObjectRangeCheck> searcher(nearbyBots, checker);
+    Cell::VisitWorldObjects(player, searcher, maxDistance);
 
-        Player* nearby = obj->ToPlayer();
-        if (!nearby || nearby == player)
-            return;
+    // Filter for bots only
+    std::vector<Player*> botList;
+    for (Player* nearby : nearbyBots)
+    {
+        if (!nearby || nearby == player || !nearby->IsInWorld())
+            continue;
 
         // Strict distance check in 3D space
         float distance = std::sqrt(
@@ -433,21 +436,21 @@ Player* GetNearbyBot(Player* player, float maxDistance)
         );
 
         if (distance > maxDistance)
-            return;
+            continue;
 
         // Check if it's a playerbot
         if (nearby->GetSession() && nearby->GetSession()->IsBot())
         {
-            nearbyBots.push_back(nearby);
+            botList.push_back(nearby);
         }
-    }, maxDistance);
+    }
 
-    if (nearbyBots.empty())
+    if (botList.empty())
         return nullptr;
 
     // Select random bot from available ones
-    uint32 randomIndex = urand(0, nearbyBots.size() - 1);
-    return nearbyBots[randomIndex];
+    uint32 randomIndex = urand(0, botList.size() - 1);
+    return botList[randomIndex];
 }
 
 void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
