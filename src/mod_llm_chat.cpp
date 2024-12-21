@@ -391,64 +391,41 @@ public:
         switch (type)
         {
             case CHAT_MSG_SAY:
-            {
-                // Process all messages, not just those with @AI
-                if (!msg.empty())
-                {
-                    LOG_INFO("module.llm_chat", "Processing SAY command from %s: %s", 
-                        player->GetName().c_str(), 
-                        msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_SAY);
-                }
-                break;
-            }
             case CHAT_MSG_YELL:
-            {
-                if (!msg.empty())
-                {
-                    LOG_INFO("module.llm_chat", "Processing YELL command from %s: %s", 
-                        player->GetName().c_str(), 
-                        msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_YELL);
-                }
-                break;
-            }
             case CHAT_MSG_PARTY:
             case CHAT_MSG_PARTY_LEADER:
-            {
-                if (!msg.empty())
-                {
-                    LOG_INFO("module.llm_chat", "Processing PARTY command from %s: %s", 
-                        player->GetName().c_str(), 
-                        msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_PARTY);
-                }
-                break;
-            }
             case CHAT_MSG_GUILD:
-            {
-                if (!msg.empty())
-                {
-                    LOG_INFO("module.llm_chat", "Processing GUILD command from %s: %s", 
-                        player->GetName().c_str(), 
-                        msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_GUILD);
-                }
-                break;
-            }
             case CHAT_MSG_WHISPER:
+            case CHAT_MSG_CHANNEL:
             {
                 if (!msg.empty())
                 {
-                    LOG_INFO("module.llm_chat", "Processing WHISPER command from %s: %s", 
+                    LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
+                        GetChatTypeString(type).c_str(),
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_WHISPER);
+                    SendAIResponse(player, msg, player->GetTeamId(), type);
                 }
                 break;
             }
             default:
                 break;
+        }
+    }
+
+    // Helper function to get chat type string
+    std::string GetChatTypeString(uint32 type)
+    {
+        switch (type)
+        {
+            case CHAT_MSG_SAY: return "SAY";
+            case CHAT_MSG_YELL: return "YELL";
+            case CHAT_MSG_PARTY: return "PARTY";
+            case CHAT_MSG_PARTY_LEADER: return "PARTY_LEADER";
+            case CHAT_MSG_GUILD: return "GUILD";
+            case CHAT_MSG_WHISPER: return "WHISPER";
+            case CHAT_MSG_CHANNEL: return "CHANNEL";
+            default: return "UNKNOWN";
         }
     }
 };
@@ -574,7 +551,10 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     // Find a nearby bot to respond
     Player* respondingBot = nullptr;
     
-    if (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL)
+    // Check if this is a distance-dependent chat type
+    bool requiresDistance = (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL);
+    
+    if (requiresDistance)
     {
         // For local chat, find a nearby bot with strict distance check
         float chatRange = (originalChatType == CHAT_MSG_SAY) ? LLM_Config.ChatRange : LLM_Config.ChatRange * 2;
@@ -588,38 +568,56 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     }
     else
     {
-        // For other chat types, find any available bot with a limit
+        // For other chat types, find any available bot
         std::vector<Player*> availableBots;
         Map* map = sender->GetMap();
         if (!map)
             return;
 
-        // Limit the number of players to check to prevent infinite loops
         uint32 checkedPlayers = 0;
         const uint32 MAX_PLAYERS_TO_CHECK = 100;
 
         map->DoForAllPlayers([&](Player* potentialBot) {
-            // Break if we've checked too many players
             if (checkedPlayers++ >= MAX_PLAYERS_TO_CHECK)
                 return;
 
             if (!potentialBot || !potentialBot->GetSession() || !potentialBot->IsInWorld())
                 return;
 
-            // Check if it's a bot
             if (potentialBot->GetSession()->IsBot())
             {
-                // For party chat, check if in same group
-                if (originalChatType == CHAT_MSG_PARTY && 
-                    (!potentialBot->GetGroup() || potentialBot->GetGroup() != sender->GetGroup()))
-                    return;
+                bool isEligible = false;
+                
+                switch (originalChatType)
+                {
+                    case CHAT_MSG_PARTY:
+                    case CHAT_MSG_PARTY_LEADER:
+                        isEligible = potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup();
+                        break;
+                        
+                    case CHAT_MSG_GUILD:
+                        isEligible = potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild();
+                        break;
+                        
+                    case CHAT_MSG_CHANNEL:
+                        // For channel chat, any bot can respond
+                        isEligible = true;
+                        break;
+                        
+                    case CHAT_MSG_WHISPER:
+                        // For whispers, any bot can respond
+                        isEligible = true;
+                        break;
+                        
+                    default:
+                        isEligible = true;
+                        break;
+                }
 
-                // For guild chat, check if in same guild
-                if (originalChatType == CHAT_MSG_GUILD && 
-                    (!potentialBot->GetGuild() || potentialBot->GetGuild() != sender->GetGuild()))
-                    return;
-
-                availableBots.push_back(potentialBot);
+                if (isEligible)
+                {
+                    availableBots.push_back(potentialBot);
+                }
             }
         });
 
@@ -636,8 +634,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         return;
     }
 
-    // Double check distance for local chat
-    if ((originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL) &&
+    // Double check distance only for distance-dependent chat types
+    if (requiresDistance &&
         sender->GetDistance(respondingBot) > LLM_Config.ChatRange * (originalChatType == CHAT_MSG_YELL ? 2 : 1))
     {
         LOG_INFO("module.llm_chat", "Selected bot is too far away");
@@ -691,6 +689,19 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
             ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, respondingBot, nullptr, response);
             sender->GetSession()->SendPacket(&data);
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
+            break;
+            
+        case CHAT_MSG_CHANNEL:
+            // For channel messages, we'll use the same channel the original message was sent in
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, LANG_UNIVERSAL, respondingBot, nullptr, response);
+            if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+            {
+                if (Channel* chn = cMgr->GetChannel(msg, sender))
+                {
+                    chn->SendToAll(&data, sender);
+                    LOG_INFO("module.llm_chat", "Bot '%s' responds in channel: %s", respondingBot->GetName().c_str(), response.c_str());
+                }
+            }
             break;
             
         default:
