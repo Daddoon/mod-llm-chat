@@ -427,7 +427,7 @@ public:
                         if (Channel* channel = cMgr->GetChannel(channelName, responder))
                         {
                             // Get AI response
-                            std::string response = QueryLLM(msg, responder->GetName());
+                            std::string response = QueryLLM(message, responder->GetName());
                             if (!response.empty())
                             {
                                 // Use Say method with player's GUID
