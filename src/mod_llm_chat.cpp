@@ -389,7 +389,7 @@ public:
             case CHAT_MSG_SAY:
                 player->Say(message, LANG_UNIVERSAL);
                 break;
-                
+
             case CHAT_MSG_YELL:
                 player->Yell(message, LANG_UNIVERSAL);
                 break;
@@ -398,7 +398,15 @@ public:
             case CHAT_MSG_PARTY_LEADER:
                 if (Group* group = player->GetGroup())
                 {
-                    group->BroadcastChat(message.c_str());
+                    WorldPacket data;
+                    ChatHandler::BuildChatPacket(data, 
+                        static_cast<ChatMsg>(type), 
+                        LANG_UNIVERSAL,
+                        player->GetGUID(),
+                        ObjectGuid::Empty,
+                        message,
+                        0);
+                    group->BroadcastPacket(&data, false);
                 }
                 break;
 
