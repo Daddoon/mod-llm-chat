@@ -696,20 +696,31 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
         {
             if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
             {
-                // Get the channel from the player's current channel
-                if (Channel* channel = sender->GetChannel())
+                // Extract channel name from the message
+                std::string channelName;
+                std::string message = msg;
+                
+                // Channel messages come in format: "ChannelName Message"
+                size_t spacePos = message.find(' ');
+                if (spacePos != std::string::npos)
                 {
-                    // Build the chat packet for channel message
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, 
-                        respondingBot->GetGUID(), respondingBot->GetName(), nullptr, nullptr, channel->GetName().c_str());
+                    channelName = message.substr(0, spacePos);
+                    message = message.substr(spacePos + 1);
                     
-                    // Send to all channel members
-                    channel->SendToAll(&data);
-                    LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
-                        respondingBot->GetName().c_str(), 
-                        channel->GetName().c_str(),
-                        response.c_str());
+                    if (Channel* channel = cMgr->GetChannel(channelName, sender))
+                    {
+                        // Build the chat packet for channel message
+                        WorldPacket data;
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, response, LANG_UNIVERSAL, CHAT_TAG_NONE, 
+                            respondingBot->GetGUID(), respondingBot->GetName(), nullptr, nullptr, channelName.c_str());
+                        
+                        // Send to all channel members
+                        channel->SendToAll(&data);
+                        LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
+                            respondingBot->GetName().c_str(), 
+                            channelName.c_str(),
+                            response.c_str());
+                    }
                 }
             }
             break;
