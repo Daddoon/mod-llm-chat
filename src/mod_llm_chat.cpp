@@ -527,6 +527,158 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
     }
 }
 
+// Move these class definitions before SendAIResponse
+class RemovePacifiedEvent : public BasicEvent
+{
+    Player* player;
+
+public:
+    RemovePacifiedEvent(Player* p) : player(p) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (player && player->IsInWorld())
+        {
+            player->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+        }
+        return true;
+    }
+};
+
+class BotResponseEvent : public BasicEvent
+{
+    Player* responder;
+    Player* originalSender;
+    std::string response;
+    uint32 chatType;
+    std::string message;
+    TeamId team;
+
+public:
+    BotResponseEvent(Player* r, Player* s, std::string resp, uint32 t, std::string m, TeamId tm) 
+        : responder(r), originalSender(s), response(resp), chatType(t), message(m), team(tm) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (!responder || !responder->IsInWorld())
+            return true;
+
+        // Double check we're not responding as the original sender
+        if (originalSender && 
+            (responder == originalSender || 
+             (responder->GetSession() && originalSender->GetSession() && 
+              responder->GetSession()->GetAccountId() == originalSender->GetSession()->GetAccountId())))
+        {
+            LOG_ERROR("module.llm_chat", "Prevented response from original sender's account");
+            return true;
+        }
+
+        std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
+        // Check if the bot has a session
+        if (WorldSession* session = responder->GetSession())
+        {
+            if (session->IsBot())
+            {
+                // Stop any current movement
+                responder->StopMoving();
+                responder->ClearInCombat();
+                
+                // Clear any current actions
+                responder->InterruptNonMeleeSpells(false);
+                responder->RemoveAurasByType(SPELL_AURA_MOUNTED);
+                
+                // Remove food/drink auras (using actual aura IDs)
+                responder->RemoveAura(433);  // Food
+                responder->RemoveAura(430);  // Drink
+            }
+        }
+
+        switch (chatType)
+        {
+            case CHAT_MSG_SAY:
+                responder->Say(response, LANG_UNIVERSAL);
+                break;
+                
+            case CHAT_MSG_YELL:
+                responder->Yell(response, LANG_UNIVERSAL);
+                break;
+                
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+                if (Group* group = responder->GetGroup())
+                {
+                    WorldPacket data;
+                    ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
+                        LANG_UNIVERSAL, responder, nullptr, response);
+                    group->BroadcastPacket(&data, false);
+                }
+                break;
+                
+            case CHAT_MSG_GUILD:
+                if (Guild* guild = responder->GetGuild())
+                {
+                    guild->BroadcastToGuild(responder->GetSession(), false, 
+                        response, LANG_UNIVERSAL);
+                }
+                break;
+                
+            case CHAT_MSG_CHANNEL:
+                if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+                {
+                    size_t spacePos = message.find(' ');
+                    if (spacePos != std::string::npos)
+                    {
+                        std::string channelName = message.substr(0, spacePos);
+                        if (Channel* channel = cMgr->GetChannel(channelName, responder))
+                        {
+                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
+                        }
+                    }
+                }
+                break;
+        }
+
+        // Add a small delay before the bot can act again
+        if (WorldSession* session = responder->GetSession())
+        {
+            if (session->IsBot())
+            {
+                // Add a 5-second immunity to prevent immediate actions
+                responder->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                responder->m_Events.AddEvent(new RemovePacifiedEvent(responder), 
+                    responder->m_Events.CalculateTime(5000));
+            }
+        }
+
+        std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
+        LOG_INFO("module.llm_chat", "%s", deliveredMsg.c_str());
+        return true;
+    }
+};
+
+class TriggerResponseEvent : public BasicEvent
+{
+    Player* player;
+    std::string message;
+    uint32 chatType;
+    TeamId team;
+
+public:
+    TriggerResponseEvent(Player* p, std::string msg, uint32 type) 
+        : player(p), message(msg), chatType(type), team(p->GetTeamId()) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (!player || !player->IsInWorld())
+            return true;
+
+        SendAIResponse(player, message, chatType, team);
+        return true;
+    }
+};
+
 // Add after the QueryLLM function
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team)
 {
@@ -663,160 +815,6 @@ public:
 };
 
 // Add this class before BotResponseEvent
-class RemovePacifiedEvent : public BasicEvent
-{
-    Player* player;
-
-public:
-    RemovePacifiedEvent(Player* p) : player(p) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (player && player->IsInWorld())
-        {
-            player->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-        }
-        return true;
-    }
-};
-
-// Create a custom event class for bot responses
-class BotResponseEvent : public BasicEvent
-{
-    Player* responder;
-    Player* originalSender;
-    std::string response;
-    uint32 chatType;
-    std::string message;
-    TeamId team;
-
-public:
-    BotResponseEvent(Player* r, Player* s, std::string resp, uint32 t, std::string m, TeamId tm) 
-        : responder(r), originalSender(s), response(resp), chatType(t), message(m), team(tm) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (!responder || !responder->IsInWorld())
-            return true;
-
-        // Double check we're not responding as the original sender
-        if (originalSender && 
-            (responder == originalSender || 
-             (responder->GetSession() && originalSender->GetSession() && 
-              responder->GetSession()->GetAccountId() == originalSender->GetSession()->GetAccountId())))
-        {
-            LOG_ERROR("module.llm_chat", "Prevented response from original sender's account");
-            return true;
-        }
-
-        std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
-
-        // Check if the bot has a session
-        if (WorldSession* session = responder->GetSession())
-        {
-            if (session->IsBot())
-            {
-                // Stop any current movement
-                responder->StopMoving();
-                responder->ClearInCombat();
-                
-                // Clear any current actions
-                responder->InterruptNonMeleeSpells(false);
-                responder->RemoveAurasByType(SPELL_AURA_MOUNTED);
-                
-                // Remove food/drink auras (using actual aura IDs)
-                responder->RemoveAura(433);  // Food
-                responder->RemoveAura(430);  // Drink
-            }
-        }
-
-        switch (chatType)
-        {
-            case CHAT_MSG_SAY:
-                responder->Say(response, LANG_UNIVERSAL);
-                break;
-                
-            case CHAT_MSG_YELL:
-                responder->Yell(response, LANG_UNIVERSAL);
-                break;
-                
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                if (Group* group = responder->GetGroup())
-                {
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
-                        LANG_UNIVERSAL, responder, nullptr, response);
-                    group->BroadcastPacket(&data, false);
-                }
-                break;
-                
-            case CHAT_MSG_GUILD:
-                if (Guild* guild = responder->GetGuild())
-                {
-                    guild->BroadcastToGuild(responder->GetSession(), false, 
-                        response, LANG_UNIVERSAL);
-                }
-                break;
-                
-            case CHAT_MSG_CHANNEL:
-                if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-                {
-                    size_t spacePos = message.find(' ');
-                    if (spacePos != std::string::npos)
-                    {
-                        std::string channelName = message.substr(0, spacePos);
-                        if (Channel* channel = cMgr->GetChannel(channelName, responder))
-                        {
-                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
-                        }
-                    }
-                }
-                break;
-        }
-
-        // Add a small delay before the bot can act again
-        if (WorldSession* session = responder->GetSession())
-        {
-            if (session->IsBot())
-            {
-                // Add a 5-second immunity to prevent immediate actions
-                responder->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-                responder->m_Events.AddEvent(new RemovePacifiedEvent(responder), 
-                    responder->m_Events.CalculateTime(5000));
-            }
-        }
-
-        std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
-        LOG_INFO("module.llm_chat", "%s", deliveredMsg.c_str());
-        return true;
-    }
-};
-
-// Add this class definition before the LLMChatModule class
-class TriggerResponseEvent : public BasicEvent
-{
-    Player* player;
-    std::string message;
-    uint32 chatType;
-    TeamId team;
-
-public:
-    TriggerResponseEvent(Player* p, std::string msg, uint32 type) 
-        : player(p), message(msg), chatType(type), team(p->GetTeamId()) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (!player || !player->IsInWorld())
-            return true;
-
-        SendAIResponse(player, message, chatType, team);
-        return true;
-    }
-};
-
-// Add before Add_LLMChatScripts()
 class LLMChatAnnounce : public PlayerScript
 {
 public:
@@ -827,7 +825,7 @@ public:
         // Announce Module
         if (sConfigMgr->GetOption<int32>("LLMChat.Announce", 1))
         {
-            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module.");
+            ChatHandler(player->GetSession()).SendSysMessage("This server is running the LLM Chat module.");
         }
     }
 };
