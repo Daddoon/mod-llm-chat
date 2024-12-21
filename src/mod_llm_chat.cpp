@@ -577,8 +577,16 @@ public:
             return true;
         }
 
-        LOG_INFO("module.llm_chat", "Executing response from %s: %s", 
-            responder->GetName().c_str(), response.c_str());
+        std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
+        // Force the bot to stop any current actions
+        if (PlayerbotAI* botAI = responder->GetPlayerbotAI())
+        {
+            botAI->InterruptSpell();
+            botAI->RemoveAura("Drink");
+            botAI->RemoveAura("Food");
+        }
 
         switch (chatType)
         {
@@ -625,7 +633,14 @@ public:
                 break;
         }
 
-        LOG_INFO("module.llm_chat", "Successfully delivered response from %s", responder->GetName().c_str());
+        // Prevent the bot's AI from overriding our response
+        if (PlayerbotAI* botAI = responder->GetPlayerbotAI())
+        {
+            botAI->ResetNextCheckDelay();
+        }
+
+        std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
+        LOG_INFO("module.llm_chat", "%s", deliveredMsg.c_str());
         return true;
     }
 };
@@ -854,19 +869,21 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         return;
 
     // Create a conversation key
-    std::string conversationKey = Acore::StringFormat("%s_%s", sender->GetName().c_str(), msg.c_str());
+    std::string conversationKey = sender->GetName() + "_" + msg;
     
     // Check if we've reached the maximum rounds for this conversation
     if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
     {
-        LOG_INFO("module.llm_chat", "Maximum conversation rounds reached for conversation with %s", sender->GetName().c_str());
+        std::string logMsg = "Maximum conversation rounds reached for " + sender->GetName();
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
         return;
     }
     
     // Increment the conversation round counter
     conversationRounds[conversationKey]++;
 
-    LOG_INFO("module.llm_chat", "Player %s says: %s", sender->GetName().c_str(), msg.c_str());
+    std::string logMsg = "Player " + sender->GetName() + " says: " + msg;
+    LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
 
     // Get all eligible bots
     std::vector<Player*> eligibleBots;
@@ -876,7 +893,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         if (!player || !player->IsInWorld() || player == sender)
             return;
 
-        // Skip if it's not a bot or if it's the original sender
+        // Skip if it's not a bot
         if (!player->GetSession() || !player->GetSession()->IsBot())
             return;
 
@@ -900,11 +917,13 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
 
     if (eligibleBots.empty())
     {
-        LOG_INFO("module.llm_chat", "No eligible bots found to respond to %s", sender->GetName().c_str());
+        std::string logMsg = "No eligible bots found to respond to " + sender->GetName();
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
         return;
     }
 
-    LOG_INFO("module.llm_chat", "Found %u eligible bots to respond", static_cast<uint32>(eligibleBots.size()));
+    std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
+    LOG_INFO("module.llm_chat", "%s", countMsg.c_str());
 
     // Randomly select up to MaxResponsesPerMessage bots
     std::random_shuffle(eligibleBots.begin(), eligibleBots.end());
@@ -915,7 +934,8 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         // Apply response chance
         if (urand(1, 100) > LLM_Config.ResponseChance)
         {
-            LOG_INFO("module.llm_chat", "Bot %s skipped response due to chance", eligibleBots[i]->GetName().c_str());
+            std::string skipMsg = "Bot " + eligibleBots[i]->GetName() + " skipped response due to chance";
+            LOG_INFO("module.llm_chat", "%s", skipMsg.c_str());
             continue;
         }
 
@@ -925,19 +945,26 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         std::string response = QueryLLM(msg, sender->GetName());
         if (response.empty())
         {
-            LOG_INFO("module.llm_chat", "Bot %s got empty response from LLM", respondingBot->GetName().c_str());
+            std::string emptyMsg = "Bot " + respondingBot->GetName() + " got empty response from LLM";
+            LOG_INFO("module.llm_chat", "%s", emptyMsg.c_str());
             continue;
         }
 
-        LOG_INFO("module.llm_chat", "Bot %s responds to %s: %s", 
-            respondingBot->GetName().c_str(), 
-            sender->GetName().c_str(), 
-            response.c_str());
+        // Add the response prefix if configured
+        if (!LLM_Config.ResponsePrefix.empty())
+        {
+            response = LLM_Config.ResponsePrefix + response;
+        }
+
+        std::string responseMsg = "Bot " + respondingBot->GetName() + " responds to " + 
+            sender->GetName() + ": " + response;
+        LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
 
         // Add a random delay between 1-3 seconds, increasing with each responder
         uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
-        LOG_INFO("module.llm_chat", "Scheduling response from %s with %u ms delay", 
-            respondingBot->GetName().c_str(), delay);
+        std::string delayMsg = "Scheduling response from " + respondingBot->GetName() + 
+            " with " + std::to_string(delay) + "ms delay";
+        LOG_INFO("module.llm_chat", "%s", delayMsg.c_str());
 
         // Schedule the response
         BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
