@@ -165,31 +165,116 @@ std::string ParseLLMResponse(std::string const& rawResponse)
     }
 }
 
+std::string DetectTone(const std::string& message) {
+    // Convert message to lowercase for easier matching
+    std::string lowerMsg = message;
+    std::transform(lowerMsg.begin(), lowerMsg.end(), lowerMsg.begin(), ::tolower);
+
+    // Check for aggressive/angry tone
+    if (lowerMsg.find("!") != std::string::npos ||
+        lowerMsg.find("hate") != std::string::npos ||
+        lowerMsg.find("stupid") != std::string::npos ||
+        lowerMsg.find("angry") != std::string::npos ||
+        lowerMsg.find("fight") != std::string::npos) {
+        return "aggressive";
+    }
+
+    // Check for friendly/happy tone
+    if (lowerMsg.find("hello") != std::string::npos ||
+        lowerMsg.find("hey") != std::string::npos ||
+        lowerMsg.find("thanks") != std::string::npos ||
+        lowerMsg.find("lol") != std::string::npos ||
+        lowerMsg.find(":)") != std::string::npos ||
+        lowerMsg.find("happy") != std::string::npos) {
+        return "friendly";
+    }
+
+    // Check for sad/melancholic tone
+    if (lowerMsg.find("sad") != std::string::npos ||
+        lowerMsg.find("sorry") != std::string::npos ||
+        lowerMsg.find("miss") != std::string::npos ||
+        lowerMsg.find(":(") != std::string::npos ||
+        lowerMsg.find("worried") != std::string::npos) {
+        return "sad";
+    }
+
+    // Check for formal/respectful tone
+    if (lowerMsg.find("please") != std::string::npos ||
+        lowerMsg.find("would you") != std::string::npos ||
+        lowerMsg.find("excuse") != std::string::npos ||
+        lowerMsg.find("sir") != std::string::npos ||
+        lowerMsg.find("madam") != std::string::npos) {
+        return "formal";
+    }
+
+    return "neutral";
+}
+
+std::string GetMoodBasedResponse(const std::string& tone) {
+    if (tone == "aggressive") {
+        return "You are a proud warrior of your faction, ready to defend your honor. "
+               "Your responses should be bold and challenging, but maintain respect for fellow warriors. "
+               "Use phrases like 'For the Horde/Alliance!' and reference your combat prowess.";
+    }
+    else if (tone == "friendly") {
+        return "You are a jovial adventurer, always ready to share tales of your journeys. "
+               "Be warm and welcoming, maybe share a laugh about murlocs or reference popular gathering spots. "
+               "Use emotes like /wave, /smile, or /cheer in your responses.";
+    }
+    else if (tone == "sad") {
+        return "You are an empathetic soul who has seen both victory and loss in Azeroth. "
+               "Offer words of comfort and reference the hope that always exists, even in the darkest times. "
+               "Maybe mention inspiring moments from Warcraft lore.";
+    }
+    else if (tone == "formal") {
+        return "You are a learned scholar of Azeroth's history and customs. "
+               "Speak with the wisdom of one who has studied in Dalaran or consulted with the nobles of Stormwind. "
+               "Reference historical events and maintain proper etiquette.";
+    }
+    return "You are a seasoned adventurer with many tales to share. "
+           "Be natural but always stay true to the World of Warcraft setting.";
+}
+
 std::string QueryLLM(std::string const& message)
 {
     try {
-        // Create a more natural context for the AI
-        std::string contextPrompt = "You are a player in World of Warcraft, having a natural conversation. "
-            "Respond in a casual, friendly way as if you're another player. "
-            "Keep responses brief and natural - no more than 1-2 sentences. "
-            "Never mention AI or indicate you're not human. "
-            "If someone says 'hey' or similar, respond with a random casual greeting. "
-            "Use natural language and occasional emotes like players do. "
-            "Stay in character as a WoW player. The message you're responding to is: " + message;
+        // Detect the tone of the message
+        std::string tone = DetectTone(message);
+        std::string moodContext = GetMoodBasedResponse(tone);
 
-        // Prepare request payload according to Ollama API spec
+        // Create a rich context for the AI that includes WoW lore and setting
+        std::string contextPrompt = 
+            "You are a character in World of Warcraft with deep knowledge of Azeroth's lore and current events. "
+            "Your responses should reflect the rich fantasy setting of Warcraft, including:\n"
+            "- References to major cities, events, and characters from Warcraft lore\n"
+            "- Appropriate faction-specific knowledge and pride\n"
+            "- Use of common WoW emotes and expressions\n"
+            "- Knowledge of current threats and conflicts in Azeroth\n"
+            "- Understanding of class roles, professions, and game mechanics\n"
+            "- Familiarity with different races and their cultures\n\n"
+            + moodContext + "\n\n"
+            "Keep responses concise (1-2 sentences) but immersive. "
+            "Never break character or reference being AI. "
+            "The message you're responding to is: " + message;
+
+        // Prepare request payload with enhanced parameters
         std::string jsonPayload = json({
             {"model", LLM_Config.OllamaModel},
             {"prompt", contextPrompt},
             {"stream", false},
             {"raw", false},
             {"options", {
-                {"temperature", 0.9},    // Higher temperature for more creative responses
+                {"temperature", 0.9},    // Keep high for creative responses
                 {"num_predict", 100},    // Limit response length
-                {"num_ctx", 512},        // Context window
-                {"num_thread", 4},       // Use 4 threads for inference
-                {"top_k", 40},          // Vocabulary limitation
-                {"top_p", 0.9}          // Nucleus sampling
+                {"num_ctx", 2048},       // Large context window for lore
+                {"num_thread", std::thread::hardware_concurrency()},
+                {"num_gpu", 1},
+                {"top_k", 40},
+                {"top_p", 0.9},
+                {"repeat_penalty", 1.2},  // Increased to reduce repetition
+                {"mirostat", 2},
+                {"mirostat_tau", 5.0},
+                {"mirostat_eta", 0.1}
             }}
         }).dump();
 
@@ -285,9 +370,20 @@ public:
             return;
         }
 
+        // Check if the message is from a bot and if we should allow bot-to-bot interactions
+        bool isBot = player->GetSession() && player->GetSession()->IsBot();
+        static const float BOT_RESPONSE_CHANCE = 0.5f; // 50% chance for bots to respond to other bots
+
+        // If it's a bot message, randomly decide if we should process it
+        if (isBot && (rand() / float(RAND_MAX)) > BOT_RESPONSE_CHANCE)
+        {
+            return;
+        }
+
         // Log the raw chat message first
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %u, Message: %s", 
+        LOG_INFO("module.llm_chat", "Chat received - Player: %s (Bot: %s), Type: %u, Message: %s", 
             player->GetName().c_str(), 
+            isBot ? "yes" : "no",
             type, 
             msg.c_str());
 
