@@ -475,11 +475,10 @@ public:
             return;
         }
 
-        // Only process messages from real players to trigger bot responses
-        // Skip if the message is from a bot
-        if (player->GetSession() && player->GetSession()->IsBot())
+        // Only process messages from real players
+        if (!player->GetSession() || player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
         {
-            LOG_INFO("module.llm_chat", "Skipping message from bot");
+            LOG_INFO("module.llm_chat", "Skipping message from GM or invalid session");
             return;
         }
 
@@ -673,105 +672,113 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
     }
 
     try {
-        // Get a list of eligible bots
-        std::vector<Player*> eligibleBots;
+        // Get a list of eligible players
+        std::vector<Player*> eligiblePlayers;
         Map* map = sender->GetMap();
         if (!map)
             return;
 
-        // Determine how many bots should respond (random between 1 and 3)
+        // Determine how many players should respond (random between 1 and 3)
         uint32 numResponders = urand(1, 3);
         float chatRange = (originalChatType == CHAT_MSG_YELL) ? LLM_Config.ChatRange * 2 : LLM_Config.ChatRange;
         bool requiresDistance = (originalChatType == CHAT_MSG_SAY || originalChatType == CHAT_MSG_YELL);
 
-        map->DoForAllPlayers([&](Player* potentialBot) {
-            if (!potentialBot || !potentialBot->IsInWorld())
+        map->DoForAllPlayers([&](Player* potentialResponder) {
+            if (!potentialResponder || !potentialResponder->IsInWorld())
                 return;
 
             // Skip if this is the original sender
-            if (potentialBot == sender)
-                return;
-
-            // Only allow actual bots to respond
-            if (potentialBot->GetSession() && potentialBot->GetSession()->IsBot())
+            if (potentialResponder == sender)
             {
-                bool isEligible = false;
-                
-                if (requiresDistance)
-                {
-                    // Check distance for SAY/YELL
-                    float distance = sender->GetDistance(potentialBot);
-                    isEligible = (distance <= chatRange);
-                }
-                else
-                {
-                    // For other chat types, check appropriate conditions
-                    switch (originalChatType)
-                    {
-                        case CHAT_MSG_PARTY:
-                        case CHAT_MSG_PARTY_LEADER:
-                            isEligible = (potentialBot->GetGroup() && potentialBot->GetGroup() == sender->GetGroup());
-                            break;
-                            
-                        case CHAT_MSG_GUILD:
-                            isEligible = (potentialBot->GetGuild() && potentialBot->GetGuild() == sender->GetGuild());
-                            break;
-                            
-                        case CHAT_MSG_CHANNEL:
-                            // For channels, check if bot is in the same channel
-                            if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-                            {
-                                size_t spacePos = msg.find(' ');
-                                if (spacePos != std::string::npos)
-                                {
-                                    std::string channelName = msg.substr(0, spacePos);
-                                    Channel* channel = cMgr->GetChannel(channelName, potentialBot);
-                                    isEligible = (channel != nullptr);
-                                }
-                            }
-                            break;
-                            
-                        default:
-                            isEligible = true;
-                            break;
-                    }
-                }
+                LOG_DEBUG("module.llm_chat", "Skipping original sender: %s", potentialResponder->GetName().c_str());
+                return;
+            }
 
-                if (isEligible)
+            // Skip GMs and the original sender's account
+            if (!potentialResponder->GetSession() || 
+                potentialResponder->GetSession()->GetSecurity() >= SEC_GAMEMASTER ||
+                potentialResponder->GetSession()->GetAccountId() == sender->GetSession()->GetAccountId())
+            {
+                LOG_DEBUG("module.llm_chat", "Skipping GM/same account: %s", potentialResponder->GetName().c_str());
+                return;
+            }
+
+            bool isEligible = false;
+            
+            if (requiresDistance)
+            {
+                // Check distance for SAY/YELL
+                float distance = sender->GetDistance(potentialResponder);
+                isEligible = (distance <= chatRange);
+            }
+            else
+            {
+                // For other chat types, check appropriate conditions
+                switch (originalChatType)
                 {
-                    LOG_INFO("module.llm_chat", "Found eligible bot: %s", potentialBot->GetName().c_str());
-                    eligibleBots.push_back(potentialBot);
+                    case CHAT_MSG_PARTY:
+                    case CHAT_MSG_PARTY_LEADER:
+                        isEligible = (potentialResponder->GetGroup() && potentialResponder->GetGroup() == sender->GetGroup());
+                        break;
+                        
+                    case CHAT_MSG_GUILD:
+                        isEligible = (potentialResponder->GetGuild() && potentialResponder->GetGuild() == sender->GetGuild());
+                        break;
+                        
+                    case CHAT_MSG_CHANNEL:
+                        // For channels, check if player is in the same channel
+                        if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
+                        {
+                            size_t spacePos = msg.find(' ');
+                            if (spacePos != std::string::npos)
+                            {
+                                std::string channelName = msg.substr(0, spacePos);
+                                Channel* channel = cMgr->GetChannel(channelName, potentialResponder);
+                                isEligible = (channel != nullptr);
+                            }
+                        }
+                        break;
+                        
+                    default:
+                        isEligible = true;
+                        break;
                 }
+            }
+
+            if (isEligible)
+            {
+                LOG_INFO("module.llm_chat", "Found eligible responder: %s", potentialResponder->GetName().c_str());
+                eligiblePlayers.push_back(potentialResponder);
             }
         });
 
-        // If no eligible bots found, return
-        if (eligibleBots.empty())
+        // If no eligible players found, return
+        if (eligiblePlayers.empty())
         {
-            LOG_INFO("module.llm_chat", "No eligible bots found to respond");
+            LOG_INFO("module.llm_chat", "No eligible players found to respond");
             return;
         }
 
-        // Shuffle the eligible bots list
-        if (eligibleBots.size() > 1)
+        // Shuffle the eligible players list
+        if (eligiblePlayers.size() > 1)
         {
-            std::random_shuffle(eligibleBots.begin(), eligibleBots.end());
+            std::random_shuffle(eligiblePlayers.begin(), eligiblePlayers.end());
         }
 
-        // Limit the number of responders to available bots
-        numResponders = std::min(numResponders, (uint32)eligibleBots.size());
+        // Limit the number of responders to available players
+        numResponders = std::min(numResponders, (uint32)eligiblePlayers.size());
 
-        // Have each selected bot respond
+        // Have each selected player respond
         for (uint32 i = 0; i < numResponders; ++i)
         {
-            Player* respondingBot = eligibleBots[i];
+            Player* respondingPlayer = eligiblePlayers[i];
             
             // Get AI response
             std::string response = QueryLLM(msg, sender->GetName());
             
             if (response.empty() || response.find("Error") != std::string::npos)
             {
-                LOG_ERROR("module.llm_chat", "Failed to get AI response for bot %s", respondingBot->GetName().c_str());
+                LOG_ERROR("module.llm_chat", "Failed to get AI response for player %s", respondingPlayer->GetName().c_str());
                 continue;
             }
 
@@ -782,8 +789,8 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
             uint32 delay = 500 * (i + 1) + urand(200, 800);
             
             // Schedule the response using the custom event
-            BotResponseEvent* event = new BotResponseEvent(respondingBot, prefixedResponse, originalChatType, msg, team);
-            respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
+            BotResponseEvent* event = new BotResponseEvent(respondingPlayer, prefixedResponse, originalChatType, msg, team);
+            respondingPlayer->m_Events.AddEvent(event, respondingPlayer->m_Events.CalculateTime(delay));
         }
     }
     catch (const std::exception& e)
