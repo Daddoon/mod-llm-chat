@@ -396,7 +396,7 @@ public:
                     // Let the original message go through first
                     // Then process the AI response in the next update
                     player->m_Events.AddEvent(new BasicEvent{
-                        [player, message, type]() -> bool {
+                        [player, message, type, this]() -> bool {
                             if (player && player->IsInWorld())
                             {
                                 LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
