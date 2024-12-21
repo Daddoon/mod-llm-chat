@@ -21,6 +21,11 @@
 #include <nlohmann/json.hpp>
 #include "PlayerbotMgr.h"
 #include "PlayerbotAI.h"
+#include "WorldSession.h"
+#include "Playerbots/playerbot.h"
+#include "Playerbots/PlayerbotAIConfig.h"
+#include "Playerbots/PlayerbotAI.h"
+#include "Playerbots/PlayerbotMgr.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -298,7 +303,7 @@ public:
                     LOG_INFO("module.llm_chat", "Processing SAY command from %s: %s", 
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, -1, CHAT_MSG_SAY);
+                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_SAY);
                 }
                 break;
             }
@@ -309,7 +314,7 @@ public:
                     LOG_INFO("module.llm_chat", "Processing YELL command from %s: %s", 
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, -1, CHAT_MSG_YELL);
+                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_YELL);
                 }
                 break;
             }
@@ -321,7 +326,7 @@ public:
                     LOG_INFO("module.llm_chat", "Processing PARTY command from %s: %s", 
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, -1, CHAT_MSG_PARTY);
+                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_PARTY);
                 }
                 break;
             }
@@ -332,7 +337,7 @@ public:
                     LOG_INFO("module.llm_chat", "Processing GUILD command from %s: %s", 
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, -1, CHAT_MSG_GUILD);
+                    SendAIResponse(player, msg, player->GetTeamId(), CHAT_MSG_GUILD);
                 }
                 break;
             }
@@ -419,8 +424,8 @@ Player* GetNearbyBot(Player* player, float maxDistance)
         if (player->GetDistance(nearby) > maxDistance)
             return;
 
-        // Check if it's a playerbot
-        if (nearby->GetPlayerbotAI())
+        // Check if it's a playerbot using session
+        if (nearby->GetSession() && nearby->GetSession()->IsBot())
         {
             nearbyBots.push_back(nearby);
         }
@@ -447,6 +452,14 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         return;
     }
 
+    // Get AI response first
+    std::string response = QueryLLM(msg);
+    if (response.empty() || response.find("Error") != std::string::npos)
+    {
+        LOG_INFO("module.llm_chat", "Error getting LLM response");
+        return;
+    }
+
     // Find a nearby bot to respond
     Player* respondingBot = nullptr;
     
@@ -463,30 +476,32 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
     else
     {
         // For other chat types, find any available bot
-        SessionMap sessions = sWorld->GetAllSessions();
         std::vector<Player*> availableBots;
+        Map* map = sender->GetMap();
+        if (!map)
+            return;
 
-        for (SessionMap::iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
-        {
-            if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld())
-                continue;
+        // Get all players in the map
+        map->DoForAllPlayers([&availableBots, sender, originalChatType](Player* potentialBot) {
+            if (!potentialBot || !potentialBot->GetSession())
+                return;
 
-            Player* potentialBot = itr->second->GetPlayer();
-            if (potentialBot->GetPlayerbotAI())
+            // Check if it's a bot
+            if (potentialBot->GetSession()->IsBot())
             {
                 // For party chat, check if in same group
                 if (originalChatType == CHAT_MSG_PARTY && 
                     (!potentialBot->GetGroup() || potentialBot->GetGroup() != sender->GetGroup()))
-                    continue;
+                    return;
 
                 // For guild chat, check if in same guild
                 if (originalChatType == CHAT_MSG_GUILD && 
                     (!potentialBot->GetGuild() || potentialBot->GetGuild() != sender->GetGuild()))
-                    continue;
+                    return;
 
                 availableBots.push_back(potentialBot);
             }
-        }
+        });
 
         if (!availableBots.empty())
         {
@@ -503,31 +518,17 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
 
     LOG_INFO("module.llm_chat", "Selected bot '%s' to respond", respondingBot->GetName().c_str());
 
-    // Get AI response
-    std::string response = QueryLLM(msg);
-    if (response.empty() || response.find("Error") != std::string::npos)
-    {
-        LOG_INFO("module.llm_chat", "Error getting LLM response");
-        return;
-    }
-
     // Have the bot send the message
-    PlayerbotAI* botAI = respondingBot->GetPlayerbotAI();
-    if (!botAI)
-    {
-        LOG_INFO("module.llm_chat", "Selected bot has no AI");
-        return;
-    }
-
+    WorldPacket data;
     switch (originalChatType)
     {
         case CHAT_MSG_SAY:
-            botAI->TellPlayer(sender, response, CHAT_MSG_SAY);
+            respondingBot->Say(response, LANG_UNIVERSAL);
             LOG_INFO("module.llm_chat", "Bot '%s' says: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
         case CHAT_MSG_YELL:
-            botAI->TellPlayer(sender, response, CHAT_MSG_YELL);
+            respondingBot->Yell(response, LANG_UNIVERSAL);
             LOG_INFO("module.llm_chat", "Bot '%s' yells: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
             
@@ -535,7 +536,7 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_PARTY_LEADER:
             if (respondingBot->GetGroup() && respondingBot->GetGroup() == sender->GetGroup())
             {
-                botAI->TellPlayer(sender, response, CHAT_MSG_PARTY);
+                respondingBot->Say(response, LANG_UNIVERSAL, respondingBot->GetGroup());
                 LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
@@ -543,18 +544,18 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_GUILD:
             if (respondingBot->GetGuild() && respondingBot->GetGuild() == sender->GetGuild())
             {
-                botAI->TellPlayer(sender, response, CHAT_MSG_GUILD);
+                respondingBot->Guild->BroadcastToGuild(respondingBot->GetSession(), false, response, LANG_UNIVERSAL);
                 LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
             
         case CHAT_MSG_WHISPER:
-            botAI->TellPlayer(sender, response, CHAT_MSG_WHISPER);
+            respondingBot->Whisper(response, LANG_UNIVERSAL, sender->GetObjectGuid());
             LOG_INFO("module.llm_chat", "Bot '%s' whispers to %s: %s", respondingBot->GetName().c_str(), sender->GetName().c_str(), response.c_str());
             break;
             
         default:
-            botAI->TellPlayer(sender, response);
+            respondingBot->Say(response, LANG_UNIVERSAL);
             LOG_INFO("module.llm_chat", "Bot '%s' sends message: %s", respondingBot->GetName().c_str(), response.c_str());
             break;
     }
