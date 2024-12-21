@@ -709,21 +709,38 @@ void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 
                     
                     if (Channel* channel = cMgr->GetChannel(channelName, sender))
                     {
+                        // Get the bot's session
+                        WorldSession* session = respondingBot->GetSession();
+                        if (!session)
+                        {
+                            return;
+                        }
+
                         // Build the chat packet
                         WorldPacket data;
-                        data.Initialize(SMSG_MESSAGECHAT, 100);
-                        data << uint8(CHAT_MSG_CHANNEL);
-                        data << uint32(LANG_UNIVERSAL);
-                        data << respondingBot->GetGUID();  // sender GUID
-                        data << uint32(0);                 // some flags
-                        data << channelName;               // channel name
-                        data << respondingBot->GetGUID();  // target GUID
-                        data << uint32(response.length() + 1);
-                        data << response;
-                        data << uint8(0);                  // chat tag
+                        ChatHandler::BuildChatPacket(data, CHAT_MSG_CHANNEL, 
+                            LANG_UNIVERSAL,
+                            respondingBot,
+                            nullptr,
+                            response,
+                            0,
+                            channelName);
 
-                        // Send to all players in the channel
-                        channel->SendToAllButOne(&data, respondingBot->GetGUID());
+                        // Send to all players in the channel through their sessions
+                        Map::PlayerList const& players = respondingBot->GetMap()->GetPlayers();
+                        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                        {
+                            if (Player* player = itr->GetSource())
+                            {
+                                if (WorldSession* playerSession = player->GetSession())
+                                {
+                                    if (channel->HasPlayer(player))
+                                    {
+                                        playerSession->SendPacket(&data);
+                                    }
+                                }
+                            }
+                        }
                         
                         LOG_INFO("module.llm_chat", "Bot '%s' responds in channel %s: %s", 
                             respondingBot->GetName().c_str(), 
