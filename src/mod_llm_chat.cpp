@@ -524,6 +524,123 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
     }
 }
 
+// Add after the QueryLLM function
+void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team)
+{
+    if (!sender || !sender->IsInWorld())
+        return;
+
+    Map* map = sender->GetMap();
+    if (!map)
+        return;
+
+    // Create a conversation key
+    std::string conversationKey = sender->GetName() + "_" + msg;
+    
+    // Check if we've reached the maximum rounds for this conversation
+    if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
+    {
+        std::string logMsg = "Maximum conversation rounds reached for " + sender->GetName();
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        return;
+    }
+    
+    // Increment the conversation round counter
+    conversationRounds[conversationKey]++;
+
+    std::string logMsg = "Player " + sender->GetName() + " says: " + msg;
+    LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
+    // Get all eligible bots
+    std::vector<Player*> eligibleBots;
+    float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : LLM_Config.ChatRange;
+
+    map->DoForAllPlayers([&](Player* player) {
+        if (!player || !player->IsInWorld() || player == sender)
+            return;
+
+        // Skip if it's not a bot
+        if (!player->GetSession() || !player->GetSession()->IsBot())
+            return;
+
+        // Skip if player is too far for say/yell
+        if ((chatType == CHAT_MSG_SAY || chatType == CHAT_MSG_YELL) && 
+            sender->GetDistance(player) > maxDistance)
+            return;
+
+        // For party chat, check if in same group
+        if ((chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER) &&
+            (!sender->GetGroup() || !sender->GetGroup()->IsMember(player->GetGUID())))
+            return;
+
+        // For guild chat, check if in same guild
+        if (chatType == CHAT_MSG_GUILD &&
+            (!sender->GetGuild() || sender->GetGuild()->GetId() != player->GetGuildId()))
+            return;
+
+        eligibleBots.push_back(player);
+    });
+
+    if (eligibleBots.empty())
+    {
+        std::string logMsg = "No eligible bots found to respond to " + sender->GetName();
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        return;
+    }
+
+    std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
+    LOG_INFO("module.llm_chat", "%s", countMsg.c_str());
+
+    // Use proper random shuffle
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(eligibleBots.begin(), eligibleBots.end(), g);
+    
+    uint32 numResponders = std::min(LLM_Config.MaxResponsesPerMessage, static_cast<uint32>(eligibleBots.size()));
+    
+    for (uint32 i = 0; i < numResponders; ++i)
+    {
+        // Apply response chance
+        if (urand(1, 100) > LLM_Config.ResponseChance)
+        {
+            std::string skipMsg = "Bot " + eligibleBots[i]->GetName() + " skipped response due to chance";
+            LOG_INFO("module.llm_chat", "%s", skipMsg.c_str());
+            continue;
+        }
+
+        Player* respondingBot = eligibleBots[i];
+        
+        // Get AI response
+        std::string response = QueryLLM(msg, sender->GetName());
+        if (response.empty())
+        {
+            std::string emptyMsg = "Bot " + respondingBot->GetName() + " got empty response from LLM";
+            LOG_INFO("module.llm_chat", "%s", emptyMsg.c_str());
+            continue;
+        }
+
+        // Add the response prefix if configured
+        if (!LLM_Config.ResponsePrefix.empty())
+        {
+            response = LLM_Config.ResponsePrefix + response;
+        }
+
+        std::string responseMsg = "Bot " + respondingBot->GetName() + " responds to " + 
+            sender->GetName() + ": " + response;
+        LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
+
+        // Add a random delay between 1-3 seconds, increasing with each responder
+        uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
+        std::string delayMsg = "Scheduling response from " + respondingBot->GetName() + 
+            " with " + std::to_string(delay) + "ms delay";
+        LOG_INFO("module.llm_chat", "%s", delayMsg.c_str());
+
+        // Schedule the response
+        BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
+        respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
+    }
+}
+
 class LLMChatLogger {
 public:
     static void Log(int32 level, std::string const& message) {
