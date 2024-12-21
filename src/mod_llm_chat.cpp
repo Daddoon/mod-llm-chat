@@ -25,6 +25,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
+#include <random>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -415,15 +416,6 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             "The message you're responding to is from " + playerName + ": " + message;
 
         LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
-
-        // Find emotion category for response timing
-        float delayMultiplier = 1.0f;
-        for (const auto& e : EMOTIONS) {
-            if (e.name == emotion) {
-                delayMultiplier = e.responseDelay;
-                break;
-            }
-        }
 
         // Prepare request payload with emotion-adjusted parameters
         json requestJson = {
@@ -960,8 +952,11 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
     LOG_INFO("module.llm_chat", "%s", countMsg.c_str());
 
-    // Randomly select up to MaxResponsesPerMessage bots
-    std::random_shuffle(eligibleBots.begin(), eligibleBots.end());
+    // Use proper random shuffle
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(eligibleBots.begin(), eligibleBots.end(), g);
+    
     uint32 numResponders = std::min(LLM_Config.MaxResponsesPerMessage, static_cast<uint32>(eligibleBots.size()));
     
     for (uint32 i = 0; i < numResponders; ++i)
@@ -1012,7 +1007,7 @@ class LLMChatPlayerScript : public PlayerScript
 public:
     LLMChatPlayerScript() : PlayerScript("LLMChatPlayerScript") {}
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
+    void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
     {
         if (!player || !player->IsInWorld())
             return;   
@@ -1025,7 +1020,7 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel) override
+    void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Channel* channel) override
     {
         if (!player || !player->IsInWorld() || !channel)
             return;
@@ -1038,7 +1033,7 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Group* group) override
+    void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Group* group) override
     {
         if (!player || !player->IsInWorld() || !group)
             return;
@@ -1051,7 +1046,7 @@ public:
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* guild) override
+    void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Guild* guild) override
     {
         if (!player || !player->IsInWorld() || !guild)
             return;
