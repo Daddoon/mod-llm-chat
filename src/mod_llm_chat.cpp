@@ -33,7 +33,7 @@ using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
 // Forward declarations
-void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType);
+void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 originalChatType);
 
 namespace {
     /* Config Variables */
@@ -404,7 +404,7 @@ public:
                         GetChatTypeString(type).c_str(),
                         player->GetName().c_str(), 
                         msg.c_str());
-                    SendAIResponse(player, msg, player->GetTeamId(), type);
+                    SendAIResponse(player, msg, player->GetTeam() == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE, type);
                 }
                 break;
             }
@@ -521,7 +521,7 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     return botList[randomIndex];
 }
 
-void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 originalChatType)
+void SendAIResponse(Player* sender, const std::string& msg, TeamId team, uint32 originalChatType)
 {
     if (!sender || !sender->IsInWorld() || msg.empty())
     {
