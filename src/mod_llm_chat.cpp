@@ -19,9 +19,8 @@
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <nlohmann/json.hpp>
-#include "playerbot.h"
-#include "PlayerbotAI.h"
-#include "PlayerbotMgr.h"
+#include "PlayerBot/Base/PlayerbotAI.h"
+#include "PlayerBot/Base/PlayerbotMgr.h"
 #include "WorldSession.h"
 
 namespace beast = boost::beast;
