@@ -723,9 +723,11 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                     std::string channelName = msg.substr(0, spacePos);
                     if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
                     {
-                        Channel* channel = cMgr->GetChannel(channelName, sender);
-                        if (!channel || !channel->IsOn(player->GetGUID()))
-                            return;
+                        if (Channel* channel = cMgr->GetChannel(channelName, sender))
+                        {
+                            // Use Say method which is public and handles all the necessary checks
+                            channel->Say(sender, response.c_str(), LANG_UNIVERSAL);
+                        }
                     }
                 }
             }
