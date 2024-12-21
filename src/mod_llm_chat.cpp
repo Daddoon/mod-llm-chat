@@ -109,60 +109,41 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
     }
 }
 
-std::string ParseLLMResponse(std::string const& rawResponse)
+std::string ParseLLMResponse(const std::string& rawResponse)
 {
     try {
-        LOG_INFO("module.llm_chat", "%s", "Parsing API Response...");
+        LOG_DEBUG("module.llm_chat", "Parsing raw response: %s", rawResponse.c_str());
         
-        // Split response by newlines in case of streaming
-        std::string finalResponse;
-        std::istringstream stream(rawResponse);
-        std::string line;
+        auto jsonResponse = json::parse(rawResponse);
         
-        while (std::getline(stream, line)) {
-            if (line.empty()) continue;
-            
-            try {
-                json responseObj = json::parse(line);
-                
-                // Extract response text
-                if (responseObj.contains("response")) {
-                    std::string responseText = responseObj["response"].get<std::string>();
-                    LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Got response part: %s", responseText.c_str()).c_str());
-                    finalResponse += responseText;
-                }
-                
-                // If this is the final message in a stream
-                if (responseObj.contains("done") && responseObj["done"].get<bool>()) {
-                    LOG_INFO("module.llm_chat", "%s", "Found end of stream");
-                    break;
-                }
-            }
-            catch (json::parse_error const& e) {
-                LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Failed to parse line: %s", line.c_str()).c_str());
-                continue;
-            }
-        }
-        
-        if (!finalResponse.empty()) {
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Final combined response: %s", finalResponse.c_str()).c_str());
-            return finalResponse;
-        }
-        
-        // Fallback: try parsing as single response
-        json singleResponse = json::parse(rawResponse);
-        if (singleResponse.contains("response")) {
-            std::string response = singleResponse["response"].get<std::string>();
-            LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Single response: %s", response.c_str()).c_str());
+        // Check for response field
+        if (jsonResponse.contains("response"))
+        {
+            std::string response = jsonResponse["response"].get<std::string>();
+            LOG_DEBUG("module.llm_chat", "Parsed response: %s", response.c_str());
             return response;
         }
         
-        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("No valid response found in: %s", rawResponse.c_str()).c_str());
-        return "Error parsing LLM response";
+        // Fallback to checking for text field
+        if (jsonResponse.contains("text"))
+        {
+            std::string response = jsonResponse["text"].get<std::string>();
+            LOG_DEBUG("module.llm_chat", "Parsed response from text field: %s", response.c_str());
+            return response;
+        }
+
+        LOG_ERROR("module.llm_chat", "No valid response field found in JSON");
+        return "Error: Invalid response format";
     }
-    catch (json::parse_error const& e) {
-        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("JSON parse error: %s", e.what()).c_str());
-        return "Error parsing response";
+    catch (const json::parse_error& e)
+    {
+        LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
+        return "Error: Failed to parse response";
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("module.llm_chat", "Error parsing response: %s", e.what());
+        return "Error: Failed to process response";
     }
 }
 
@@ -247,6 +228,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
     try {
         // Detect the tone of the message
         std::string tone = DetectTone(message);
+        LOG_DEBUG("module.llm_chat", "Detected tone: %s", tone.c_str());
         
         // Create a context that reflects actual WoW chat style
         std::string contextPrompt = 
@@ -260,31 +242,26 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             "- Be casual and friendly, like a real gamer\n\n"
             "The message you're responding to is from " + playerName + ": " + message;
 
-        // Prepare request payload with enhanced parameters
-        std::string jsonPayload = json({
+        LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
+
+        // Prepare request payload
+        json requestJson = {
             {"model", LLM_Config.OllamaModel},
             {"prompt", contextPrompt},
             {"stream", false},
-            {"raw", false},
             {"options", {
-                {"temperature", 0.9},    // Keep high for creative responses
-                {"num_predict", 100},    // Limit response length
-                {"num_ctx", 2048},       // Large context window for lore
+                {"temperature", 0.9},
+                {"num_predict", 100},
+                {"num_ctx", 2048},
                 {"num_thread", std::thread::hardware_concurrency()},
-                {"num_gpu", 1},
                 {"top_k", 40},
                 {"top_p", 0.9},
-                {"repeat_penalty", 1.2},  // Increased to reduce repetition
-                {"mirostat", 2},
-                {"mirostat_tau", 5.0},
-                {"mirostat_eta", 0.1}
+                {"repeat_penalty", 1.2}
             }}
-        }).dump();
+        };
 
-        LOG_DEBUG("module.llm_chat", "=== API Request ===");
-        LOG_DEBUG("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-        LOG_DEBUG("module.llm_chat", "Input: %s", message.c_str());
-        LOG_DEBUG("module.llm_chat", "Full Request: %s", jsonPayload.c_str());
+        std::string jsonPayload = requestJson.dump();
+        LOG_DEBUG("module.llm_chat", "Request payload: %s", jsonPayload.c_str());
 
         // Set up the IO context
         net::io_context ioc;
@@ -293,11 +270,11 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_DEBUG("module.llm_chat", "Connecting to: %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
+        LOG_DEBUG("module.llm_chat", "Resolved host %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
-        // Make the connection on the IP address we get from a lookup
+        // Make the connection
         stream.connect(results);
-        LOG_DEBUG("module.llm_chat", "Connected to Ollama API");
+        LOG_DEBUG("module.llm_chat", "Connected to API endpoint");
 
         // Set up an HTTP POST request message
         http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -307,11 +284,11 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         req.body() = jsonPayload;
         req.prepare_payload();
 
-        // Send the HTTP request to the remote host
+        // Send the HTTP request
         http::write(stream, req);
-        LOG_DEBUG("module.llm_chat", "Request sent to API");
+        LOG_DEBUG("module.llm_chat", "Sent request to API");
 
-        // This buffer is used for reading and must be persisted
+        // This buffer is used for reading
         beast::flat_buffer buffer;
 
         // Declare a container to hold the response
@@ -319,9 +296,8 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Receive the HTTP response
         http::read(stream, buffer, res);
-        LOG_DEBUG("module.llm_chat", "=== API Response ===");
-        LOG_DEBUG("module.llm_chat", "Status: %d", static_cast<int>(res.result()));
-        LOG_DEBUG("module.llm_chat", "Raw Response: %s", res.body().c_str());
+        LOG_DEBUG("module.llm_chat", "Received response with status: %d", static_cast<int>(res.result()));
+        LOG_DEBUG("module.llm_chat", "Response body: %s", res.body().c_str());
 
         // Gracefully close the socket
         beast::error_code ec;
@@ -334,25 +310,14 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         }
 
         std::string response = ParseLLMResponse(res.body());
-        if (response.empty())
-        {
-            LOG_ERROR("module.llm_chat", "Empty response after parsing");
-            return "Error: Empty response";
-        }
-
-        LOG_DEBUG("module.llm_chat", "Final Processed Response: %s", response.c_str());
-        LOG_DEBUG("module.llm_chat", "=== End API Transaction ===\n");
+        LOG_DEBUG("module.llm_chat", "Final processed response: %s", response.c_str());
+        
         return response;
     }
     catch (const std::exception& e)
     {
         LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
         return "Error: Service error";
-    }
-    catch (...)
-    {
-        LOG_ERROR("module.llm_chat", "Unknown API Error");
-        return "Error: Unknown error";
     }
 }
 
