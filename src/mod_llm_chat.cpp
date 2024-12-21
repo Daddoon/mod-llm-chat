@@ -754,13 +754,6 @@ public:
     }
 };
 
-void Add_LLMChatScripts()
-{
-    new LLMChatAnnounce();
-    new LLMChatConfig();
-    new LLMChatPlayerScript();
-}
-
 class LLMChatPlayerScript : public PlayerScript
 {
 public:
@@ -834,4 +827,11 @@ public:
 
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
-}; 
+};
+
+void Add_LLMChatScripts()
+{
+    new LLMChatAnnounce();
+    new LLMChatConfig();
+    new LLMChatPlayerScript();
+} 
