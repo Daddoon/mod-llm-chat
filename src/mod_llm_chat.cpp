@@ -459,21 +459,20 @@ public:
                 LOG_INFO("module.llm_chat", "Processing player message for bot responses - Type: %s, Message: '%s'", 
                     GetChatTypeString(type).c_str(), msg.c_str());
 
-                // Add a small delay before processing
+                // Trigger SendAIResponse directly with a small delay
                 uint32 delay = urand(100, 500);
                 LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
 
-                // Create and add the event
-                AIResponseEvent* event = new AIResponseEvent(player, msg, type, player->GetTeamId());
-                if (event)
-                {
-                    player->m_Events.AddEvent(event, player->m_Events.CalculateTime(delay));
-                    LOG_INFO("module.llm_chat", "Successfully added AI response event");
-                }
-                else
-                {
-                    LOG_ERROR("module.llm_chat", "Failed to create AI response event");
-                }
+                // Create and add the event to trigger SendAIResponse
+                player->m_Events.AddEvent(new BasicEvent(),
+                    player->m_Events.CalculateTime(delay),
+                    [player, msg, type]() {
+                        if (player && player->IsInWorld()) {
+                            SendAIResponse(player, msg, player->GetTeamId(), type);
+                        }
+                    });
+
+                LOG_INFO("module.llm_chat", "Successfully added AI response event");
                 break;
             }
             default:
