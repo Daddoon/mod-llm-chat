@@ -694,312 +694,11 @@ public:
     }
 };
 
-class LLMChatModule : public PlayerScript
+void Add_LLMChatScripts()
 {
-public:
-    LLMChatModule() : PlayerScript("LLMChatModule") {}
-
-    void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
-    {
-        LOG_INFO("module.llm_chat", "OnChat triggered - checking conditions...");
-
-        if (!LLM_Config.Enabled)
-        {
-            LOG_INFO("module.llm_chat", "Module is disabled in config");
-            return;
-        }
-
-        if (!player || msg.empty())
-        {
-            LOG_INFO("module.llm_chat", "Invalid player or empty message");
-            return;
-        }
-
-        // Skip if this is an AI response to prevent loops
-        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
-        {
-            LOG_INFO("module.llm_chat", "Skipping AI response message");
-            return;
-        }
-
-        // Only process messages from players with valid sessions
-        if (!player->GetSession())
-        {
-            LOG_INFO("module.llm_chat", "Skipping message from invalid session");
-            return;
-        }
-
-        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: %s", 
-            player->GetName().c_str(), 
-            GetChatTypeString(type).c_str(), 
-            msg.c_str());
-
-        // Handle different chat types
-        switch (type)
-        {
-            case CHAT_MSG_SAY:
-            case CHAT_MSG_YELL:
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-            case CHAT_MSG_GUILD:
-            case CHAT_MSG_WHISPER:
-            case CHAT_MSG_CHANNEL:
-            {
-                LOG_INFO("module.llm_chat", "Processing message - Type: %s, Content: %s", 
-                    GetChatTypeString(type).c_str(), msg.c_str());
-
-                // Add a small delay before processing
-                uint32 delay = urand(100, 500);
-                LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
-
-                // Create and add the event
-                TriggerResponseEvent* event = new TriggerResponseEvent(player, msg, type);
-                player->m_Events.AddEvent(event, player->m_Events.CalculateTime(delay));
-
-                LOG_INFO("module.llm_chat", "Successfully added AI response event");
-                break;
-            }
-            default:
-                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
-                break;
-        }
-    }
-
-    // Helper function to get chat type string
-    std::string GetChatTypeString(uint32 type)
-    {
-        switch (type)
-        {
-            case CHAT_MSG_SAY: return "SAY";
-            case CHAT_MSG_YELL: return "YELL";
-            case CHAT_MSG_PARTY: return "PARTY";
-            case CHAT_MSG_PARTY_LEADER: return "PARTY_LEADER";
-            case CHAT_MSG_GUILD: return "GUILD";
-            case CHAT_MSG_WHISPER: return "WHISPER";
-            case CHAT_MSG_CHANNEL: return "CHANNEL";
-            default: return "UNKNOWN";
-        }
-    }
-};
-
-class LLMChatAnnounce : public PlayerScript
-{
-public:
-    LLMChatAnnounce() : PlayerScript("LLMChatAnnounce") {}
-
-    void OnLogin(Player* player) override
-    {
-        // Announce Module
-        if (sConfigMgr->GetOption<int32>("LLMChat.Announce", 1))
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module.");
-        }
-    }
-};
-
-class LLMChatConfig : public WorldScript
-{
-public:
-    LLMChatConfig() : WorldScript("LLMChatConfig") {}
-
-    void OnBeforeConfigLoad(bool /*reload*/) override
-    {
-        LOG_INFO("module.llm_chat", "Loading LLM Chat configuration...");
-
-        LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
-        LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
-        LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
-        LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
-        LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
-        LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
-        
-        // New configuration options
-        LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 2);
-        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 3);
-        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 50);
-
-        // Parse the endpoint URL
-        ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
-
-        // Log the loaded configuration
-        LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
-        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
-        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
-        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
-        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
-        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
-        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
-        LOG_INFO("module.llm_chat", "Response Prefix: '%s'", LLM_Config.ResponsePrefix.c_str());
-        LOG_INFO("module.llm_chat", "Chat Range: %.2f", LLM_Config.ChatRange);
-        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
-        LOG_INFO("module.llm_chat", "Max Responses Per Message: %u", LLM_Config.MaxResponsesPerMessage);
-        LOG_INFO("module.llm_chat", "Max Conversation Rounds: %u", LLM_Config.MaxConversationRounds);
-        LOG_INFO("module.llm_chat", "Response Chance: %u%%", LLM_Config.ResponseChance);
-        LOG_INFO("module.llm_chat", "=== End Configuration ===");
-    }
-};
-
-Player* GetNearbyBot(Player* player, float maxDistance)
-{
-    if (!player || !player->IsInWorld())
-        return nullptr;
-
-    Map* map = player->GetMap();
-    if (!map)
-        return nullptr;
-
-    std::vector<Player*> botList;
-    float playerX = player->GetPositionX();
-    float playerY = player->GetPositionY();
-    float playerZ = player->GetPositionZ();
-
-    // Iterate through all players on the map
-    map->DoForAllPlayers([&](Player* potentialBot) {
-        if (!potentialBot || potentialBot == player || !potentialBot->IsInWorld())
-            return;
-
-        // Check if it's a bot
-        if (!potentialBot->GetSession() || !potentialBot->GetSession()->IsBot())
-            return;
-
-        // Calculate 3D distance
-        float distance = std::sqrt(
-            std::pow(playerX - potentialBot->GetPositionX(), 2) +
-            std::pow(playerY - potentialBot->GetPositionY(), 2) +
-            std::pow(playerZ - potentialBot->GetPositionZ(), 2)
-        );
-
-        if (distance <= maxDistance)
-        {
-            botList.push_back(potentialBot);
-        }
-    });
-
-    if (botList.empty())
-        return nullptr;
-
-    // Select random bot from available ones
-    uint32 randomIndex = urand(0, botList.size() - 1);
-    return botList[randomIndex];
-}
-
-// Modify the SendAIResponse function to handle multiple bot responses
-void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team)
-{
-    if (!sender || !sender->IsInWorld())
-        return;
-
-    Map* map = sender->GetMap();
-    if (!map)
-        return;
-
-    // Create a conversation key
-    std::string conversationKey = sender->GetName() + "_" + msg;
-    
-    // Check if we've reached the maximum rounds for this conversation
-    if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
-    {
-        std::string logMsg = "Maximum conversation rounds reached for " + sender->GetName();
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
-        return;
-    }
-    
-    // Increment the conversation round counter
-    conversationRounds[conversationKey]++;
-
-    std::string logMsg = "Player " + sender->GetName() + " says: " + msg;
-    LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
-
-    // Get all eligible bots
-    std::vector<Player*> eligibleBots;
-    float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : LLM_Config.ChatRange;
-
-    map->DoForAllPlayers([&](Player* player) {
-        if (!player || !player->IsInWorld() || player == sender)
-            return;
-
-        // Skip if it's not a bot
-        if (!player->GetSession() || !player->GetSession()->IsBot())
-            return;
-
-        // Skip if player is too far for say/yell
-        if ((chatType == CHAT_MSG_SAY || chatType == CHAT_MSG_YELL) && 
-            sender->GetDistance(player) > maxDistance)
-            return;
-
-        // For party chat, check if in same group
-        if ((chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER) &&
-            (!sender->GetGroup() || !sender->GetGroup()->IsMember(player->GetGUID())))
-            return;
-
-        // For guild chat, check if in same guild
-        if (chatType == CHAT_MSG_GUILD &&
-            (!sender->GetGuild() || sender->GetGuild()->GetId() != player->GetGuildId()))
-            return;
-
-        eligibleBots.push_back(player);
-    });
-
-    if (eligibleBots.empty())
-    {
-        std::string logMsg = "No eligible bots found to respond to " + sender->GetName();
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
-        return;
-    }
-
-    std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
-    LOG_INFO("module.llm_chat", "%s", countMsg.c_str());
-
-    // Use proper random shuffle
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(eligibleBots.begin(), eligibleBots.end(), g);
-    
-    uint32 numResponders = std::min(LLM_Config.MaxResponsesPerMessage, static_cast<uint32>(eligibleBots.size()));
-    
-    for (uint32 i = 0; i < numResponders; ++i)
-    {
-        // Apply response chance
-        if (urand(1, 100) > LLM_Config.ResponseChance)
-        {
-            std::string skipMsg = "Bot " + eligibleBots[i]->GetName() + " skipped response due to chance";
-            LOG_INFO("module.llm_chat", "%s", skipMsg.c_str());
-            continue;
-        }
-
-        Player* respondingBot = eligibleBots[i];
-        
-        // Get AI response
-        std::string response = QueryLLM(msg, sender->GetName());
-        if (response.empty())
-        {
-            std::string emptyMsg = "Bot " + respondingBot->GetName() + " got empty response from LLM";
-            LOG_INFO("module.llm_chat", "%s", emptyMsg.c_str());
-            continue;
-        }
-
-        // Add the response prefix if configured
-        if (!LLM_Config.ResponsePrefix.empty())
-        {
-            response = LLM_Config.ResponsePrefix + response;
-        }
-
-        std::string responseMsg = "Bot " + respondingBot->GetName() + " responds to " + 
-            sender->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
-
-        // Add a random delay between 1-3 seconds, increasing with each responder
-        uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
-        std::string delayMsg = "Scheduling response from " + respondingBot->GetName() + 
-            " with " + std::to_string(delay) + "ms delay";
-        LOG_INFO("module.llm_chat", "%s", delayMsg.c_str());
-
-        // Schedule the response
-        BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
-        respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
-    }
+    new LLMChatAnnounce();
+    new LLMChatConfig();
+    new LLMChatPlayerScript();
 }
 
 class LLMChatPlayerScript : public PlayerScript
@@ -1009,61 +708,70 @@ public:
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
     {
-        if (!player || !player->IsInWorld())
-            return;   
-
-        // Skip if message is empty or too short
-        if (msg.empty() || msg.length() < 2)
+        if (!LLM_Config.Enabled)
             return;
 
-        // Process the message and send AI response
-        SendAIResponse(player, msg, type, player->GetTeamId());
+        if (!player || !player->IsInWorld() || msg.empty() || msg.length() < 2)
+            return;
+
+        // Skip if this is an AI response to prevent loops
+        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
+            return;
+
+        std::string logMsg = "Player " + player->GetName() + " says: " + msg;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
+        // Add a small delay before processing
+        uint32 delay = urand(100, 500);
+        LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+
+        // Create and add the event
+        player->m_Events.AddEvent(new TriggerResponseEvent(player, msg, type), 
+            player->m_Events.CalculateTime(delay));
     }
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Channel* channel) override
     {
-        if (!player || !player->IsInWorld() || !channel)
+        if (!LLM_Config.Enabled || !player || !player->IsInWorld() || !channel || msg.empty() || msg.length() < 2)
             return;
 
-        // Skip if message is empty or too short
-        if (msg.empty() || msg.length() < 2)
+        // Skip if this is an AI response
+        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        // Process the message and send AI response
+        std::string logMsg = "Player " + player->GetName() + " says in channel: " + msg;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Group* group) override
     {
-        if (!player || !player->IsInWorld() || !group)
-            return;
-      
-        // Skip if message is empty or too short
-        if (msg.empty() || msg.length() < 2)
+        if (!LLM_Config.Enabled || !player || !player->IsInWorld() || !group || msg.empty() || msg.length() < 2)
             return;
 
-        // Process the message and send AI response
+        // Skip if this is an AI response
+        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
+            return;
+
+        std::string logMsg = "Player " + player->GetName() + " says in group: " + msg;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Guild* guild) override
     {
-        if (!player || !player->IsInWorld() || !guild)
+        if (!LLM_Config.Enabled || !player || !player->IsInWorld() || !guild || msg.empty() || msg.length() < 2)
             return;
 
-        // Skip if message is empty or too short
-        if (msg.empty() || msg.length() < 2)
+        // Skip if this is an AI response
+        if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        // Process the message and send AI response
+        std::string logMsg = "Player " + player->GetName() + " says in guild: " + msg;
+        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
 }; 
-
-void Add_LLMChatScripts()
-{
-    new LLMChatAnnounce();
-    new LLMChatConfig();
-    new LLMChatModule();
-    new LLMChatPlayerScript();
-} 
