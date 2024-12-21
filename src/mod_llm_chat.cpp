@@ -694,6 +694,66 @@ public:
     }
 };
 
+// Add before Add_LLMChatScripts()
+class LLMChatAnnounce : public PlayerScript
+{
+public:
+    LLMChatAnnounce() : PlayerScript("LLMChatAnnounce") {}
+
+    void OnLogin(Player* player) override
+    {
+        // Announce Module
+        if (sConfigMgr->GetOption<int32>("LLMChat.Announce", 1))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00LLM Chat|r module.");
+        }
+    }
+};
+
+class LLMChatConfig : public WorldScript
+{
+public:
+    LLMChatConfig() : WorldScript("LLMChatConfig") {}
+
+    void OnBeforeConfigLoad(bool /*reload*/) override
+    {
+        LOG_INFO("module.llm_chat", "Loading LLM Chat configuration...");
+
+        LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
+        LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
+        LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
+        LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
+        LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
+        LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
+        
+        // New configuration options
+        LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 2);
+        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 3);
+        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 50);
+
+        // Parse the endpoint URL
+        ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
+
+        // Log the loaded configuration
+        LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
+        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
+        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
+        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
+        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
+        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
+        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
+        LOG_INFO("module.llm_chat", "Response Prefix: '%s'", LLM_Config.ResponsePrefix.c_str());
+        LOG_INFO("module.llm_chat", "Chat Range: %.2f", LLM_Config.ChatRange);
+        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
+        LOG_INFO("module.llm_chat", "Max Responses Per Message: %u", LLM_Config.MaxResponsesPerMessage);
+        LOG_INFO("module.llm_chat", "Max Conversation Rounds: %u", LLM_Config.MaxConversationRounds);
+        LOG_INFO("module.llm_chat", "Response Chance: %u%%", LLM_Config.ResponseChance);
+        LOG_INFO("module.llm_chat", "=== End Configuration ===");
+    }
+};
+
 void Add_LLMChatScripts()
 {
     new LLMChatAnnounce();

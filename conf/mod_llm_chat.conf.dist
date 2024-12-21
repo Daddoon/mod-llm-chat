@@ -16,7 +16,7 @@ LLMChat.Enable = 1
 #        Default:     0  - (Disabled to maintain immersion)
 #                     1  - (Enabled)
 
-LLMChat.Announce = 0
+LLMChat.Announce = 1
 
 #    LLMChat.Provider
 #        Description: Which LLM provider to use
@@ -47,7 +47,7 @@ LLMChat.ChatRange = 25.0
 #        Description: Prefix for responses (empty for natural chat)
 #        Default:    ""
 
-LLMChat.ResponsePrefix = ""
+LLMChat.ResponsePrefix = "[AI] "
 
 #    LLMChat.LogLevel
 #        Description: Level of logging detail
@@ -64,7 +64,7 @@ LLMChat.LogLevel = 3
 #                     0  - (Disabled)
 #                     1-10  - (Number of responding bots)
 
-LLMChat.MaxResponsesPerMessage = 2
+LLMChat.MaxResponsesPerMessage = 3
 
 #    LLMChat.MaxConversationRounds
 #        Description: Maximum number of back-and-forth exchanges in a conversation
@@ -80,6 +80,6 @@ LLMChat.MaxConversationRounds = 3
 #                     0  - (Never respond)
 #                     100  - (Always respond)
 
-LLMChat.ResponseChance = 50
+LLMChat.ResponseChance = 75
 
 ################################################################################################### 
