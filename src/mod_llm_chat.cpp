@@ -437,7 +437,7 @@ public:
                         {
                             if (Channel* channel = cMgr->GetChannel(channelName, player))
                             {
-                                channel->Say(player, channelMessage.c_str(), LANG_UNIVERSAL);
+                                channel->Say(player->GetGUID(), channelMessage, LANG_UNIVERSAL);
                             }
                         }
                     }
