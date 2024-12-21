@@ -36,6 +36,9 @@ using json = nlohmann::json;
 // Forward declarations
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team);
 std::string QueryLLM(std::string const& message, const std::string& playerName);
+class BotResponseEvent;
+class RemovePacifiedEvent;
+class TriggerResponseEvent;
 
 namespace {
 /* Config Variables */
