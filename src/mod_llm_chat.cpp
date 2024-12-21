@@ -453,7 +453,7 @@ public:
         if (!player || !player->IsInWorld())
             return true;
 
-        SendAIResponse(player, message, team, chatType);
+        SendAIResponse(player, message, chatType, team);
         return true;
     }
 };
