@@ -724,7 +724,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                     if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
                     {
                         Channel* channel = cMgr->GetChannel(channelName, sender);
-                        if (!channel || !channel->HasPlayer(player))
+                        if (!channel || !channel->IsOn(player->GetGUID()))
                             return;
                     }
                 }
