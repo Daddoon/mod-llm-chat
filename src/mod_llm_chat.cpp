@@ -380,42 +380,40 @@ public:
             return;
         }
 
-        // Schedule the AI response to be processed on the next server update
-        // This ensures the original message appears first
-        player->GetMap()->GetScheduler().Schedule(Milliseconds(100), [player, message, type, isBot](TaskContext /*context*/)
+        // Handle different chat types
+        switch (type)
         {
-            // Log the raw chat message
-            LOG_INFO("module.llm_chat", "Chat received - Player: %s (Bot: %s), Type: %u, Message: %s", 
-                player->GetName().c_str(), 
-                isBot ? "yes" : "no",
-                type, 
-                message.c_str());
-
-            // Handle different chat types
-            switch (type)
+            case CHAT_MSG_SAY:
+            case CHAT_MSG_YELL:
+            case CHAT_MSG_PARTY:
+            case CHAT_MSG_PARTY_LEADER:
+            case CHAT_MSG_GUILD:
+            case CHAT_MSG_WHISPER:
+            case CHAT_MSG_CHANNEL:
             {
-                case CHAT_MSG_SAY:
-                case CHAT_MSG_YELL:
-                case CHAT_MSG_PARTY:
-                case CHAT_MSG_PARTY_LEADER:
-                case CHAT_MSG_GUILD:
-                case CHAT_MSG_WHISPER:
-                case CHAT_MSG_CHANNEL:
+                if (!message.empty())
                 {
-                    if (!message.empty())
-                    {
-                        LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
-                            GetChatTypeString(type).c_str(),
-                            player->GetName().c_str(), 
-                            message.c_str());
-                        SendAIResponse(player, message, player->GetTeamId(), type);
-                    }
-                    break;
+                    // Let the original message go through first
+                    // Then process the AI response in the next update
+                    player->m_Events.AddEvent(new BasicEvent{
+                        [player, message, type]() -> bool {
+                            if (player && player->IsInWorld())
+                            {
+                                LOG_INFO("module.llm_chat", "Processing %s command from %s: %s", 
+                                    GetChatTypeString(type).c_str(),
+                                    player->GetName().c_str(), 
+                                    message.c_str());
+                                SendAIResponse(player, message, player->GetTeamId(), type);
+                            }
+                            return true;
+                        }
+                    }, player->m_Events.CalculateTime(100)); // 100ms delay
                 }
-                default:
-                    break;
+                break;
             }
-        });
+            default:
+                break;
+        }
     }
 
     // Helper function to get chat type string
