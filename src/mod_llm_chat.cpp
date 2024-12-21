@@ -532,7 +532,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_PARTY_LEADER:
             if (respondingBot->GetGroup() && respondingBot->GetGroup() == sender->GetGroup())
             {
-                respondingBot->Say(response, LANG_UNIVERSAL, respondingBot->GetGroup());
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                respondingBot->GetGroup()->BroadcastPacket(&data, false);
                 LOG_INFO("module.llm_chat", "Bot '%s' says to party: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
@@ -540,7 +541,8 @@ void SendAIResponse(Player* sender, const std::string& msg, int team, uint32 ori
         case CHAT_MSG_GUILD:
             if (respondingBot->GetGuild() && respondingBot->GetGuild() == sender->GetGuild())
             {
-                respondingBot->Guild->BroadcastToGuild(respondingBot->GetSession(), false, response, LANG_UNIVERSAL);
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, LANG_UNIVERSAL, respondingBot, nullptr, response);
+                respondingBot->GetGuild()->BroadcastPacket(&data);
                 LOG_INFO("module.llm_chat", "Bot '%s' says to guild: %s", respondingBot->GetName().c_str(), response.c_str());
             }
             break;
