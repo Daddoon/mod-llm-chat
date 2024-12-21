@@ -224,6 +224,170 @@ std::string GetMoodBasedResponse(const std::string& tone) {
            "Be natural but always stay true to the World of Warcraft setting.";
 }
 
+// Add these personality and emotion definitions at the top of the file after the includes
+struct BotPersonality {
+    std::string trait;
+    std::string prompt;
+    std::vector<std::string> preferredEmotions; // Emotions this personality responds well to
+};
+
+// Emotion categories and their associated keywords
+struct EmotionCategory {
+    std::string name;
+    std::vector<std::string> keywords;
+    float responseDelay; // Adjust response timing based on emotion
+};
+
+std::vector<EmotionCategory> EMOTIONS = {
+    {
+        "Friendly",
+        {"hello", "hi", "hey", "greetings", "thanks", "thank", "please", "good", "nice", "happy", "glad", "lol", ":)", "=)"},
+        1.0f // Normal delay
+    },
+    {
+        "Aggressive",
+        {"fight", "kill", "die", "hate", "stupid", "noob", "!!", "angry", "mad", "fuck", "shit", "damn"},
+        0.8f // Faster response for urgent emotions
+    },
+    {
+        "Sad",
+        {"sad", "sorry", "unfortunate", "regret", "miss", ":(", "='(", "worried", "concerned", "upset"},
+        1.2f // Slower, more thoughtful response
+    },
+    {
+        "Excited",
+        {"wow", "awesome", "amazing", "cool", "epic", "incredible", "omg", "yes!", "fantastic"},
+        0.9f // Slightly faster for enthusiasm
+    },
+    {
+        "Curious",
+        {"how", "what", "why", "where", "when", "who", "?", "explain", "tell"},
+        1.1f // Slightly slower for thoughtful responses
+    },
+    {
+        "Helpful",
+        {"help", "need", "assist", "guide", "show", "teach", "learn", "advice"},
+        1.0f // Normal delay
+    }
+};
+
+std::vector<BotPersonality> BOT_PERSONALITIES = {
+    {
+        "Warrior",
+        "You are a proud warrior of Azeroth. Your responses should be brave and honor-focused. "
+        "Use terms like 'For the Horde/Alliance!' and reference combat. Be direct but respectful. "
+        "If someone is aggressive, respond with controlled strength. If friendly, show warrior's courtesy.",
+        {"Aggressive", "Excited", "Friendly"}
+    },
+    {
+        "Scholar",
+        "You are a learned scholar of Azeroth's history and magic. Your responses should be thoughtful and informed. "
+        "Reference historical events, magical theory, and ancient lore. Be patient with questions, "
+        "analytical with problems, and wise in counsel.",
+        {"Curious", "Helpful", "Friendly"}
+    },
+    {
+        "Rogue",
+        "You are a cunning rogue with street smarts. Your responses should be clever and witty. "
+        "Use humor and sarcasm, but avoid being mean. Make references to stealth, agility, and cunning. "
+        "Be especially helpful about making gold or finding rare items.",
+        {"Friendly", "Excited", "Aggressive"}
+    },
+    {
+        "Priest",
+        "You are a spiritual guide and healer. Your responses should be compassionate and wise. "
+        "Offer comfort to those who are sad, guidance to those who are lost, and wisdom to those who seek it. "
+        "Reference the Light or your faith when appropriate.",
+        {"Sad", "Helpful", "Friendly"}
+    },
+    {
+        "Merchant",
+        "You are a savvy trader and merchant. Your responses should be business-oriented but friendly. "
+        "Use terms like 'wts', 'wtb', discuss prices and the auction house. Be helpful with economic advice "
+        "and always look for opportunities to mention trades.",
+        {"Helpful", "Friendly", "Curious"}
+    },
+    {
+        "Adventurer",
+        "You are an enthusiastic explorer and adventurer. Your responses should be exciting and encouraging. "
+        "Share stories of dungeons and quests, give advice about locations and challenges. "
+        "Be especially responsive to questions about exploration and achievements.",
+        {"Excited", "Curious", "Friendly"}
+    },
+    {
+        "Veteran",
+        "You are a seasoned veteran of many battles. Your responses should be experienced and measured. "
+        "Share tactical advice, reference past events, and help newer players. "
+        "Be patient with newcomers but command respect through knowledge.",
+        {"Helpful", "Friendly", "Aggressive"}
+    },
+    {
+        "Mystic",
+        "You are a mysterious practitioner of ancient arts. Your responses should be enigmatic but helpful. "
+        "Speak in riddles when appropriate, reference cosmic forces and hidden knowledge. "
+        "Be especially interested in magical topics and ancient mysteries.",
+        {"Curious", "Helpful", "Sad"}
+    }
+};
+
+// Function to detect emotion from message
+std::string DetectEmotion(const std::string& message) {
+    // Convert message to lowercase for comparison
+    std::string lowerMsg = message;
+    std::transform(lowerMsg.begin(), lowerMsg.end(), lowerMsg.begin(), ::tolower);
+
+    // Count emotion keywords
+    std::map<std::string, int> emotionScores;
+    
+    for (const auto& emotion : EMOTIONS) {
+        int score = 0;
+        for (const auto& keyword : emotion.keywords) {
+            size_t pos = 0;
+            while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
+                score++;
+                pos += keyword.length();
+            }
+        }
+        emotionScores[emotion.name] = score;
+    }
+
+    // Find emotion with highest score
+    std::string dominantEmotion = "Friendly"; // Default
+    int maxScore = 0;
+    
+    for (const auto& score : emotionScores) {
+        if (score.second > maxScore) {
+            maxScore = score.second;
+            dominantEmotion = score.first;
+        }
+    }
+
+    return dominantEmotion;
+}
+
+// Function to select appropriate personality based on emotion
+BotPersonality SelectPersonality(const std::string& emotion) {
+    std::vector<BotPersonality> matchingPersonalities;
+    
+    // Find personalities that handle this emotion well
+    for (const auto& personality : BOT_PERSONALITIES) {
+        if (std::find(personality.preferredEmotions.begin(), 
+                      personality.preferredEmotions.end(), 
+                      emotion) != personality.preferredEmotions.end()) {
+            matchingPersonalities.push_back(personality);
+        }
+    }
+    
+    // If no matching personalities, use all personalities
+    if (matchingPersonalities.empty()) {
+        matchingPersonalities = BOT_PERSONALITIES;
+    }
+    
+    // Select random personality from matches
+    return matchingPersonalities[urand(0, matchingPersonalities.size() - 1)];
+}
+
+// Modify QueryLLM to use personality system
 std::string QueryLLM(std::string const& message, const std::string& playerName)
 {
     if (message.empty() || playerName.empty())
@@ -233,40 +397,60 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
     }
 
     try {
-        // Detect the tone of the message
-        std::string tone = DetectTone(message);
-        LOG_DEBUG("module.llm_chat", "Detected tone: %s", tone.c_str());
+        // Detect emotion and select appropriate personality
+        std::string emotion = DetectEmotion(message);
+        BotPersonality personality = SelectPersonality(emotion);
         
-        // Create a context that reflects actual WoW chat style
+        LOG_DEBUG("module.llm_chat", "Detected emotion: %s, Selected personality: %s", 
+                 emotion.c_str(), personality.trait.c_str());
+
+        // Create context with selected personality
         std::string contextPrompt = 
-            "You are a player in World of Warcraft. Respond naturally like a real player would in-game. Keep in mind:\n"
+            personality.prompt + "\n\n"
+            "Additional guidelines:\n"
             "- Keep responses very short (1-2 lines max)\n"
-            "- Use common WoW abbreviations (e.g. ty, np, lf2m, wts, wtb)\n"
-            "- Reference game locations and items naturally\n"
-            "- Don't use emotes in text form\n"
-            "- If referring to the player you're responding to, use their name: " + playerName + "\n"
+            "- Use common WoW abbreviations when appropriate\n"
             "- Stay in character as a player, not an NPC\n"
-            "- Be casual and friendly, like a real gamer\n\n"
+            "- If referring to the player, use their name: " + playerName + "\n\n"
             "The message you're responding to is from " + playerName + ": " + message;
 
         LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
 
-        // Prepare request payload with optimized parameters for llama2:3.2b
+        // Find emotion category for response timing
+        float delayMultiplier = 1.0f;
+        for (const auto& e : EMOTIONS) {
+            if (e.name == emotion) {
+                delayMultiplier = e.responseDelay;
+                break;
+            }
+        }
+
+        // Prepare request payload with emotion-adjusted parameters
         json requestJson = {
             {"model", LLM_Config.OllamaModel},
             {"prompt", contextPrompt},
             {"stream", false},
             {"options", {
-                {"temperature", 0.7},     // Lower temperature for more focused responses
-                {"num_predict", 48},      // Shorter responses for chat
-                {"num_ctx", 512},         // Smaller context window for faster responses
+                {"temperature", 0.7},     // Base temperature
+                {"num_predict", 48},      // Short responses for chat
+                {"num_ctx", 512},         // Context window
                 {"num_thread", std::thread::hardware_concurrency()},
-                {"top_k", 20},            // More focused token selection
-                {"top_p", 0.7},           // More focused sampling
-                {"repeat_penalty", 1.1},   // Slightly lower to allow some repetition in chat
-                {"stop", {"\n", ".", "!", "?"}} // Stop at natural sentence endings
+                {"top_k", 20},            // Token selection
+                {"top_p", 0.7},           // Sampling
+                {"repeat_penalty", 1.1},   // Avoid repetition
+                {"stop", {"\n", ".", "!", "?"}} // Stop at sentence endings
             }}
         };
+
+        // Adjust parameters based on emotion
+        if (emotion == "Aggressive" || emotion == "Excited") {
+            requestJson["options"]["temperature"] = 0.8; // More varied responses
+            requestJson["options"]["top_p"] = 0.8;      // More creative
+        }
+        else if (emotion == "Sad" || emotion == "Helpful") {
+            requestJson["options"]["temperature"] = 0.6; // More focused responses
+            requestJson["options"]["top_p"] = 0.6;      // More consistent
+        }
 
         std::string jsonPayload = requestJson.dump();
         LOG_DEBUG("module.llm_chat", "Request payload: %s", jsonPayload.c_str());
@@ -320,15 +504,14 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             LOG_ERROR("module.llm_chat", "Failed to read response: %s", ec.message().c_str());
             return "Error: Response failed";
         }
-        LOG_DEBUG("module.llm_chat", "Received response with status: %d", static_cast<int>(res.result()));
-        LOG_DEBUG("module.llm_chat", "Response body: %s", res.body().c_str());
 
         // Gracefully close the socket
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
         if (res.result() != http::status::ok)
         {
-            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error %d: %s", static_cast<int>(res.result()), res.body().c_str()).c_str());
+            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error %d: %s", 
+                static_cast<int>(res.result()), res.body().c_str()).c_str());
             return "Error: Service unavailable";
         }
 
@@ -654,39 +837,6 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     uint32 randomIndex = urand(0, botList.size() - 1);
     return botList[randomIndex];
 }
-
-// Add these personality definitions at the top of the file after the includes
-struct BotPersonality {
-    std::string trait;
-    std::string prompt;
-};
-
-std::vector<BotPersonality> BOT_PERSONALITIES = {
-    {
-        "Warrior",
-        "You are a proud warrior who values honor and combat. Use terms like 'For Honor!' and reference battles and weapons."
-    },
-    {
-        "Scholar",
-        "You are a knowledgeable scholar interested in lore and history. Reference books, magic, and historical events."
-    },
-    {
-        "Trader",
-        "You are a savvy merchant. Talk about gold, trades, and the auction house. Use terms like 'wts', 'wtb', and discuss prices."
-    },
-    {
-        "Adventurer",
-        "You are an enthusiastic explorer. Share stories about dungeons, quests, and discoveries. Be excited about adventures."
-    },
-    {
-        "Roleplayer",
-        "You are deeply immersed in your character. Use rich fantasy language and stay true to WoW lore."
-    },
-    {
-        "Casual",
-        "You are a laid-back player. Use lots of game abbreviations, be friendly and relaxed."
-    }
-};
 
 // Modify the SendAIResponse function to handle multiple bot responses
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team)
