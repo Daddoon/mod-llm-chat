@@ -346,19 +346,40 @@ public:
 
     bool Execute(uint64 /*time*/, uint32 /*diff*/) override
     {
+        LOG_INFO("module.llm_chat", "AIResponseEvent Execute started");
+
         if (!player || !player->IsInWorld())
+        {
+            LOG_INFO("module.llm_chat", "Invalid player or not in world");
             return true;
+        }
+
+        LOG_INFO("module.llm_chat", "Getting AI response for message: %s", message.c_str());
+        
+        // Get the AI response
+        std::string response = QueryLLM(message, player->GetName());
+        
+        if (response.empty() || response.find("Error") != std::string::npos)
+        {
+            LOG_ERROR("module.llm_chat", "Failed to get AI response: %s", response.c_str());
+            return true;
+        }
+
+        LOG_INFO("module.llm_chat", "Got AI response: %s", response.c_str());
 
         // Add response prefix to message
-        std::string prefixedMessage = LLM_Config.ResponsePrefix + message;
+        std::string prefixedMessage = LLM_Config.ResponsePrefix + response;
+        LOG_INFO("module.llm_chat", "Sending prefixed message: %s", prefixedMessage.c_str());
 
         switch (type)
         {
             case CHAT_MSG_SAY:
+                LOG_INFO("module.llm_chat", "Sending SAY message");
                 player->Say(prefixedMessage, LANG_UNIVERSAL);
                 break;
 
             case CHAT_MSG_YELL:
+                LOG_INFO("module.llm_chat", "Sending YELL message");
                 player->Yell(prefixedMessage, LANG_UNIVERSAL);
                 break;
 
@@ -366,6 +387,7 @@ public:
             case CHAT_MSG_PARTY_LEADER:
                 if (Group* group = player->GetGroup())
                 {
+                    LOG_INFO("module.llm_chat", "Sending PARTY message");
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, 
                         static_cast<ChatMsg>(type), 
@@ -381,6 +403,7 @@ public:
             case CHAT_MSG_GUILD:
                 if (Guild* guild = player->GetGuild())
                 {
+                    LOG_INFO("module.llm_chat", "Sending GUILD message");
                     guild->BroadcastToGuild(player->GetSession(), false, prefixedMessage, LANG_UNIVERSAL);
                 }
                 break;
@@ -388,12 +411,14 @@ public:
             case CHAT_MSG_WHISPER:
                 if (Player* target = ObjectAccessor::FindPlayer(player->GetTarget()))
                 {
+                    LOG_INFO("module.llm_chat", "Sending WHISPER message to: %s", target->GetName().c_str());
                     player->Whisper(prefixedMessage, LANG_UNIVERSAL, target);
                 }
                 break;
 
             case CHAT_MSG_CHANNEL:
                 {
+                    LOG_INFO("module.llm_chat", "Processing CHANNEL message");
                     std::string channelName;
                     size_t spacePos = message.find(' ');
                     if (spacePos != std::string::npos)
@@ -401,18 +426,30 @@ public:
                         channelName = message.substr(0, spacePos);
                         std::string channelMessage = prefixedMessage.substr(spacePos + 1);
                         
+                        LOG_INFO("module.llm_chat", "Channel: %s, Message: %s", channelName.c_str(), channelMessage.c_str());
+                        
                         if (ChannelMgr* cMgr = ChannelMgr::forTeam(teamId))
                         {
                             if (Channel* channel = cMgr->GetChannel(channelName, player))
                             {
+                                LOG_INFO("module.llm_chat", "Sending message to channel");
                                 channel->Say(player->GetGUID(), channelMessage, LANG_UNIVERSAL);
                             }
+                            else
+                            {
+                                LOG_ERROR("module.llm_chat", "Failed to get channel: %s", channelName.c_str());
+                            }
+                        }
+                        else
+                        {
+                            LOG_ERROR("module.llm_chat", "Failed to get ChannelMgr for team: %d", teamId);
                         }
                     }
                 }
                 break;
         }
 
+        LOG_INFO("module.llm_chat", "AIResponseEvent Execute completed");
         return true;
     }
 
@@ -430,28 +467,48 @@ public:
 
     void OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg) override
     {
-        if (!LLM_Config.Enabled || !player || msg.empty())
+        LOG_INFO("module.llm_chat", "OnChat triggered - checking conditions...");
+
+        if (!LLM_Config.Enabled)
         {
+            LOG_INFO("module.llm_chat", "Module is disabled in config");
             return;
         }
+
+        if (!player || msg.empty())
+        {
+            LOG_INFO("module.llm_chat", "Invalid player or empty message");
+            return;
+        }
+
+        LOG_INFO("module.llm_chat", "Chat received - Player: %s, Type: %s, Message: %s", 
+            player->GetName().c_str(), 
+            GetChatTypeString(type).c_str(), 
+            msg.c_str());
 
         // Skip if this is an AI response (to prevent infinite loops)
         if (msg.find(LLM_Config.ResponsePrefix) == 0)
         {
+            LOG_INFO("module.llm_chat", "Skipping AI response message");
             return;
         }
 
-        // Store the message for processing after it's sent
+        // Store the message for processing
         std::string message = msg;
 
-        // Check if the message is from a bot and if we should allow bot-to-bot interactions
+        // Check if the message is from a bot
         bool isBot = player->GetSession() && player->GetSession()->IsBot();
-        static const float BOT_RESPONSE_CHANCE = 0.5f; // 50% chance for bots to respond to other bots
+        static const float BOT_RESPONSE_CHANCE = 0.5f;
 
-        // If it's a bot message, randomly decide if we should process it
-        if (isBot && (rand() / float(RAND_MAX)) > BOT_RESPONSE_CHANCE)
+        if (isBot)
         {
-            return;
+            float chance = rand() / float(RAND_MAX);
+            LOG_INFO("module.llm_chat", "Bot message detected. Response chance: %f vs threshold: %f", chance, BOT_RESPONSE_CHANCE);
+            if (chance > BOT_RESPONSE_CHANCE)
+            {
+                LOG_INFO("module.llm_chat", "Skipping bot message due to random chance");
+                return;
+            }
         }
 
         // Handle different chat types
@@ -467,12 +524,22 @@ public:
             {
                 if (!message.empty())
                 {
-                    // Process the AI response with a delay
-                    SendAIResponse(player, message, player->GetTeamId(), type);
+                    LOG_INFO("module.llm_chat", "Processing message for AI response - Type: %s, Message: %s", 
+                        GetChatTypeString(type).c_str(), message.c_str());
+
+                    // Add a small delay before processing
+                    uint32 delay = urand(100, 500);  // Random delay between 100ms and 500ms
+                    LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+
+                    player->m_Events.AddEvent(
+                        new AIResponseEvent(player, message, type, player->GetTeamId()),
+                        player->m_Events.CalculateTime(delay)
+                    );
                 }
                 break;
             }
             default:
+                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
                 break;
         }
     }
