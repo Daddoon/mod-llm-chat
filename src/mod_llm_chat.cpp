@@ -548,6 +548,24 @@ public:
     }
 };
 
+// Add this class before BotResponseEvent
+class RemovePacifiedEvent : public BasicEvent
+{
+    Player* player;
+
+public:
+    RemovePacifiedEvent(Player* p) : player(p) {}
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (player && player->IsInWorld())
+        {
+            player->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+        }
+        return true;
+    }
+};
+
 // Create a custom event class for bot responses
 class BotResponseEvent : public BasicEvent
 {
@@ -651,10 +669,8 @@ public:
             {
                 // Add a 5-second immunity to prevent immediate actions
                 responder->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-                responder->m_Events.AddEvent(new BasicEvent(
-                    [responder]() {
-                        responder->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-                    }), responder->m_Events.CalculateTime(5000));
+                responder->m_Events.AddEvent(new RemovePacifiedEvent(responder), 
+                    responder->m_Events.CalculateTime(5000));
             }
         }
 
