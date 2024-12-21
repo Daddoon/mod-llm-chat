@@ -321,7 +321,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         if (res.result() != http::status::ok)
         {
-            LOG_ERROR("module.llm_chat", "HTTP error %d: %s", static_cast<int>(res.result()), res.body().c_str());
+            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error %d: %s", static_cast<int>(res.result()), res.body().c_str()).c_str());
             return "Error: Service unavailable";
         }
 
@@ -499,10 +499,10 @@ public:
             return;
         }
 
-        LOG_INFO("module.llm_chat", "Chat received from player - Player: %s, Type: %s, Message: '%s'", 
+        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Chat received from player - Player: %s, Type: %s, Message: '%s'", 
             player->GetName().c_str(), 
             GetChatTypeString(type).c_str(), 
-            msg.c_str());
+            msg.c_str()).c_str());
 
         // Handle different chat types
         switch (type)
@@ -515,12 +515,12 @@ public:
             case CHAT_MSG_WHISPER:
             case CHAT_MSG_CHANNEL:
             {
-                LOG_INFO("module.llm_chat", "Processing player message for bot responses - Type: %s, Message: '%s'", 
-                    GetChatTypeString(type).c_str(), msg.c_str());
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Processing player message for bot responses - Type: %s, Message: '%s'", 
+                    GetChatTypeString(type).c_str(), msg.c_str()).c_str());
 
                 // Add a small delay before processing
                 uint32 delay = urand(100, 500);
-                LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Adding AI response event with delay: %u ms", delay).c_str());
 
                 // Create and add the event
                 TriggerResponseEvent* event = new TriggerResponseEvent(player, msg, type);
@@ -530,7 +530,7 @@ public:
                 break;
             }
             default:
-                LOG_INFO("module.llm_chat", "Ignoring unsupported chat type: %u", type);
+                LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("Ignoring unsupported chat type: %u", type).c_str());
                 break;
         }
     }
