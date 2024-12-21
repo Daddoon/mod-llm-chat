@@ -580,12 +580,14 @@ public:
         std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
         LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
 
-        // Force the bot to stop any current actions
-        if (PlayerbotAI* botAI = responder->GetPlayerbotAI())
+        // Check if the bot has a session and is a bot
+        if (WorldSession* session = responder->GetSession())
         {
-            botAI->InterruptSpell();
-            botAI->RemoveAura("Drink");
-            botAI->RemoveAura("Food");
+            if (session->IsBot())
+            {
+                // Stop any current bot activities
+                session->HandleBotStopCommand("");
+            }
         }
 
         switch (chatType)
@@ -633,10 +635,14 @@ public:
                 break;
         }
 
-        // Prevent the bot's AI from overriding our response
-        if (PlayerbotAI* botAI = responder->GetPlayerbotAI())
+        // Reset bot's next action delay
+        if (WorldSession* session = responder->GetSession())
         {
-            botAI->ResetNextCheckDelay();
+            if (session->IsBot())
+            {
+                // Give the bot some time before resuming normal activities
+                session->HandleBotDelayCommand("5");
+            }
         }
 
         std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
