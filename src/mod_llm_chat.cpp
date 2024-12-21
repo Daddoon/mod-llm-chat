@@ -580,13 +580,20 @@ public:
         std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
         LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
 
-        // Check if the bot has a session and is a bot
+        // Check if the bot has a session
         if (WorldSession* session = responder->GetSession())
         {
             if (session->IsBot())
             {
-                // Stop any current bot activities
-                session->HandleBotStopCommand("");
+                // Stop any current movement
+                responder->StopMoving();
+                responder->ClearInCombat();
+                
+                // Clear any current actions
+                responder->InterruptNonMeleeSpells(false);
+                responder->RemoveAurasByType(SPELL_AURA_MOUNTED);
+                responder->RemoveAurasByType(SPELL_AURA_EATING);
+                responder->RemoveAurasByType(SPELL_AURA_DRINKING);
             }
         }
 
@@ -635,13 +642,17 @@ public:
                 break;
         }
 
-        // Reset bot's next action delay
+        // Add a small delay before the bot can act again
         if (WorldSession* session = responder->GetSession())
         {
             if (session->IsBot())
             {
-                // Give the bot some time before resuming normal activities
-                session->HandleBotDelayCommand("5");
+                // Add a 5-second immunity to prevent immediate actions
+                responder->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                responder->m_Events.AddEvent(new BasicEvent(
+                    [responder]() {
+                        responder->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                    }), responder->m_Events.CalculateTime(5000));
             }
         }
 
