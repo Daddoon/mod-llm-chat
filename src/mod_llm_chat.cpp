@@ -422,7 +422,11 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     // Get nearby players using grid search with strict distance check
     Acore::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
     Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(player, nearbyBots, checker);
-    map->VisitAll(playerX, playerY, maxDistance, searcher);
+    
+    // Get the cell coordinates
+    CellCoord p(Acore::ComputeCellCoord(playerX, playerY));
+    Cell cell(p);
+    cell.Visit(p, Acore::makeGridVisitor(searcher), *map, *player, maxDistance);
 
     // Filter for bots only
     std::vector<Player*> botList;
