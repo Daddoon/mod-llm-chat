@@ -13,10 +13,10 @@ LLMChat.Enable = 1
 
 #    LLMChat.Announce
 #        Description: Announce the module on player login
-#        Default:     1  - (Enabled)
-#                     0  - (Disabled)
+#        Default:     0  - (Disabled to maintain immersion)
+#                     1  - (Enabled)
 
-LLMChat.Announce = 1
+LLMChat.Announce = 0
 
 #    LLMChat.Provider
 #        Description: Which LLM provider to use
@@ -28,7 +28,6 @@ LLMChat.Provider = 1
 #    LLMChat.Ollama.Endpoint
 #        Description: Endpoint URL for Ollama API
 #        Default:    "http://localhost:11434/api/generate"
-#        Note: Use /api/generate for standard responses
 
 LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
 
@@ -39,16 +38,16 @@ LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
 LLMChat.Ollama.Model = "llama3.2:1b"
 
 #    LLMChat.ChatRange
-#        Description: Range in yards for AI chat responses to be visible
+#        Description: Range in yards for chat responses to be visible
 #        Default:     25.0
 
 LLMChat.ChatRange = 25.0
 
 #    LLMChat.ResponsePrefix
-#        Description: Prefix for AI responses in chat
-#        Default:    "[AI] "
+#        Description: Prefix for responses (empty for natural chat)
+#        Default:    ""
 
-LLMChat.ResponsePrefix = "[AI] "
+LLMChat.ResponsePrefix = ""
 
 #    LLMChat.LogLevel
 #        Description: Level of logging detail
