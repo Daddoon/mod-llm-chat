@@ -22,6 +22,9 @@
 #include "mod-playerbots/src/PlayerbotAI.h"
 #include "mod-playerbots/src/PlayerbotMgr.h"
 #include "WorldSession.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "CellImpl.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -417,8 +420,8 @@ Player* GetNearbyBot(Player* player, float maxDistance)
     float playerZ = player->GetPositionZ();
 
     // Get nearby players using grid search with strict distance check
-    MaNGOS::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
-    MaNGOS::PlayerListSearcher<MaNGOS::AnyPlayerInObjectRangeCheck> searcher(nearbyBots, checker);
+    Acore::AnyPlayerInObjectRangeCheck checker(player, maxDistance);
+    Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(nearbyBots, checker);
     Cell::VisitWorldObjects(player, searcher, maxDistance);
 
     // Filter for bots only
