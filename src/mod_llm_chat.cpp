@@ -317,6 +317,44 @@ Personality SelectPersonality(const std::string& emotion) {
     return matchingPersonalities[urand(0, matchingPersonalities.size() - 1)];
 }
 
+// Function to detect emotion from message
+std::string DetectEmotion(const std::string& message) {
+    // Convert message to lowercase for comparison
+    std::string lowerMsg = message;
+    std::transform(lowerMsg.begin(), lowerMsg.end(), lowerMsg.begin(), ::tolower);
+
+    // Count emotion keywords from emotion types
+    std::map<std::string, int> emotionScores;
+    
+    for (const auto& [emotion, data] : g_emotion_types.items()) {
+        int score = 0;
+        for (const auto& phrase : data["typical_phrases"]) {
+            std::string keyword = phrase.get<std::string>();
+            size_t pos = 0;
+            while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
+                score++;
+                pos += keyword.length();
+            }
+        }
+        emotionScores[emotion] = score;
+    }
+
+    // Find emotion with highest score
+    std::string dominantEmotion = "Friendly"; // Default
+    int maxScore = 0;
+    
+    for (const auto& [emotion, score] : emotionScores) {
+        if (score > maxScore) {
+            maxScore = score;
+            dominantEmotion = emotion;
+        }
+    }
+
+    LOG_DEBUG("module.llm_chat", "Detected emotion '%s' for message: %s", 
+        dominantEmotion.c_str(), message.c_str());
+    return dominantEmotion;
+}
+
 // Modify QueryLLM to use personality system
 std::string QueryLLM(std::string const& message, const std::string& playerName)
 {
@@ -772,7 +810,7 @@ public:
         LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
         LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
         LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "socialnetwooky/llama3.2-abliterated:1b_q8");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "gddisney/llama3.2-uncensored");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);

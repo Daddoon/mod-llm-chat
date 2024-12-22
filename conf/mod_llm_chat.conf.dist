@@ -33,9 +33,9 @@ LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
 
 #    LLMChat.Ollama.Model
 #        Description: Model to use with Ollama
-#        Default:    "socialnetwooky/llama3.2-abliterated:1b_q8"
+#        Default:    "gddisney/llama3.2-uncensored"
 
-LLMChat.Ollama.Model = "socialnetwooky/llama3.2-abliterated:1b_q8"
+LLMChat.Ollama.Model = "gddisney/llama3.2-uncensored"
 
 #    LLMChat.ChatRange
 #        Description: Range in yards for chat responses to be visible
