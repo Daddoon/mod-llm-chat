@@ -1002,7 +1002,8 @@ public:
     }
 };
 
-void AddLLMChatScripts() {
+void Add_LLMChatScripts()
+{
     new LLMChat_WorldScript();
     new LLMChatAnnounce();
     new LLMChatConfig();
