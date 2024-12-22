@@ -459,17 +459,18 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_DEBUG("module.llm_chat", "Resolved host %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "Attempting to connect to %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
 
         // Make the connection
         beast::error_code ec;
         stream.connect(results, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to connect to API: %s", ec.message().c_str());
-            return "Error: Connection failed";
+            LOG_ERROR("module.llm_chat", "Failed to connect to Ollama API at %s:%s - Error: %s", 
+                LLM_Config.Host.c_str(), LLM_Config.Port.c_str(), ec.message().c_str());
+            return "Error: Cannot connect to Ollama. Please check if Ollama is running.";
         }
-        LOG_DEBUG("module.llm_chat", "Connected to API endpoint");
+        LOG_INFO("module.llm_chat", "Successfully connected to Ollama API");
 
         // Set up an HTTP POST request message
         http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
@@ -483,10 +484,10 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         http::write(stream, req, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to send request: %s", ec.message().c_str());
-            return "Error: Request failed";
+            LOG_ERROR("module.llm_chat", "Failed to send request to Ollama - Error: %s", ec.message().c_str());
+            return "Error: Failed to send request to Ollama";
         }
-        LOG_DEBUG("module.llm_chat", "Sent request to API");
+        LOG_INFO("module.llm_chat", "Successfully sent request to Ollama");
 
         // This buffer is used for reading
         beast::flat_buffer buffer;
@@ -498,8 +499,8 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         http::read(stream, buffer, res, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to read response: %s", ec.message().c_str());
-            return "Error: Response failed";
+            LOG_ERROR("module.llm_chat", "Failed to read response from Ollama - Error: %s", ec.message().c_str());
+            return "Error: Failed to get response from Ollama";
         }
 
         // Gracefully close the socket
@@ -507,25 +508,25 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         if (res.result() != http::status::ok)
         {
-            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("HTTP error %d: %s", 
-                static_cast<int>(res.result()), res.body().c_str()).c_str());
-            return "Error: Service unavailable";
+            LOG_ERROR("module.llm_chat", "HTTP error %d from Ollama: %s", 
+                static_cast<int>(res.result()), res.body().c_str());
+            return "Error: Ollama service error - " + std::to_string(static_cast<int>(res.result()));
         }
 
         std::string response = ParseLLMResponse(res.body());
-        LOG_DEBUG("module.llm_chat", "Final processed response: %s", response.c_str());
+        LOG_INFO("module.llm_chat", "Successfully received response from Ollama: %s", response.c_str());
         
         return response;
     }
     catch (const boost::system::system_error& e)
     {
-        LOG_ERROR("module.llm_chat", "Boost system error: %s", e.what());
-        return "Error: Network error";
+        LOG_ERROR("module.llm_chat", "Network error connecting to Ollama: %s", e.what());
+        return "Error: Cannot connect to Ollama - " + std::string(e.what());
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("module.llm_chat", "API Error: %s", e.what());
-        return "Error: Service error";
+        LOG_ERROR("module.llm_chat", "Error communicating with Ollama: %s", e.what());
+        return "Error: Ollama service error - " + std::string(e.what());
     }
 }
 
@@ -844,7 +845,7 @@ public:
         LLM_Config.Enabled = sConfigMgr->GetOption<int32>("LLMChat.Enable", 0) == 1;
         LLM_Config.Provider = sConfigMgr->GetOption<int32>("LLMChat.Provider", 1);
         LLM_Config.OllamaEndpoint = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Endpoint", "http://localhost:11434/api/generate");
-        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama3.2:1b");
+        LLM_Config.OllamaModel = sConfigMgr->GetOption<std::string>("LLMChat.Ollama.Model", "llama2:3b");
         LLM_Config.ChatRange = sConfigMgr->GetOption<float>("LLMChat.ChatRange", 25.0f);
         LLM_Config.ResponsePrefix = sConfigMgr->GetOption<std::string>("LLMChat.ResponsePrefix", "[AI] ");
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
