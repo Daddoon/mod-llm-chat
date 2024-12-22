@@ -242,148 +242,65 @@ std::string GetMoodBasedResponse(const std::string& tone) {
            "Be natural but always stay true to the World of Warcraft setting.";
 }
 
-// Update the BotPersonality struct to match JSON structure
-struct BotPersonality {
+// Personality structure
+struct Personality {
     std::string id;
     std::string name;
     std::string prompt;
     std::vector<std::string> emotions;
-    struct {
-        std::string gaming_experience;
-        std::string chattiness;
-        std::string humor_level;
-        std::string formality;
-    } traits;
+    nlohmann::json traits;
     std::vector<std::string> interests;
-    struct {
-        bool uses_emotes;
-        bool uses_slang;
-        std::string typo_frequency;
-        bool uses_technical_terms;
-        bool explains_concepts;
-        bool uses_memes;
-        bool uses_references;
-        bool philosophical_tangents;
-        bool random_observations;
-    } chat_style;
+    nlohmann::json chat_style;
 };
 
-// Add emotion type structure
-struct EmotionType {
-    std::string response_style;
-    std::vector<std::string> typical_phrases;
-};
+// Global variables
+std::vector<Personality> g_personalities;
+nlohmann::json g_emotion_types;
 
-std::map<std::string, EmotionType> EMOTION_TYPES;
-
-// Update the LoadPersonalities function to parse JSON
-std::vector<BotPersonality> LoadPersonalities(const std::string& filename) {
-    std::vector<BotPersonality> personalities;
-    std::ifstream file(filename);
-    
-    if (!file.is_open()) {
-        LOG_ERROR("module.llm_chat", "Failed to open personality file: %s", filename.c_str());
-        return personalities;
-    }
-
+// Load personalities from JSON file
+bool LoadPersonalities(std::string const& filename) {
     try {
-        json j;
-        file >> j;
-
-        // Load emotion types first
-        if (j.contains("emotion_types")) {
-            for (const auto& [emotion, data] : j["emotion_types"].items()) {
-                EmotionType et;
-                et.response_style = data["response_style"];
-                et.typical_phrases = data["typical_phrases"].get<std::vector<std::string>>();
-                EMOTION_TYPES[emotion] = et;
-            }
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            LOG_ERROR("module.llm_chat", "Failed to open personality file: {}", filename);
+            return false;
         }
 
+        nlohmann::json json_data;
+        file >> json_data;
+
         // Load personalities
-        for (const auto& p : j["personalities"]) {
-            BotPersonality personality;
+        g_personalities.clear();
+        for (const auto& p : json_data["personalities"]) {
+            Personality personality;
             personality.id = p["id"];
             personality.name = p["name"];
             personality.prompt = p["prompt"];
             personality.emotions = p["emotions"].get<std::vector<std::string>>();
-            
-            // Load traits
-            personality.traits.gaming_experience = p["traits"]["gaming_experience"];
-            personality.traits.chattiness = p["traits"]["chattiness"];
-            personality.traits.humor_level = p["traits"]["humor_level"];
-            personality.traits.formality = p["traits"]["formality"];
-            
-            // Load interests
+            personality.traits = p["traits"];
             personality.interests = p["interests"].get<std::vector<std::string>>();
-            
-            // Load chat style
-            const auto& style = p["chat_style"];
-            personality.chat_style.uses_emotes = style.value("uses_emotes", false);
-            personality.chat_style.uses_slang = style.value("uses_slang", false);
-            personality.chat_style.typo_frequency = style.value("typo_frequency", "none");
-            personality.chat_style.uses_technical_terms = style.value("uses_technical_terms", false);
-            personality.chat_style.explains_concepts = style.value("explains_concepts", false);
-            personality.chat_style.uses_memes = style.value("uses_memes", false);
-            personality.chat_style.uses_references = style.value("uses_references", false);
-            personality.chat_style.philosophical_tangents = style.value("philosophical_tangents", false);
-            personality.chat_style.random_observations = style.value("random_observations", false);
-            
-            personalities.push_back(personality);
-            LOG_DEBUG("module.llm_chat", "Loaded personality: %s", personality.name.c_str());
+            personality.chat_style = p["chat_style"];
+            g_personalities.push_back(personality);
         }
+
+        // Load emotion types
+        g_emotion_types = json_data["emotion_types"];
+
+        LOG_INFO("module.llm_chat", "Loaded {} personalities from {}", g_personalities.size(), filename);
+        return true;
     }
-    catch (const json::exception& e) {
-        LOG_ERROR("module.llm_chat", "JSON parsing error: %s", e.what());
-        return std::vector<BotPersonality>();
+    catch (const std::exception& e) {
+        LOG_ERROR("module.llm_chat", "Error loading personalities: {}", e.what());
+        return false;
     }
-
-    LOG_INFO("module.llm_chat", "Loaded %u personalities and %u emotion types", 
-        uint32(personalities.size()), uint32(EMOTION_TYPES.size()));
-    return personalities;
-}
-
-// Function to detect emotion from message
-std::string DetectEmotion(const std::string& message) {
-    // Convert message to lowercase for comparison
-    std::string lowerMsg = message;
-    std::transform(lowerMsg.begin(), lowerMsg.end(), lowerMsg.begin(), ::tolower);
-
-    // Count emotion keywords
-    std::map<std::string, int> emotionScores;
-    
-    for (const auto& emotion : EMOTION_TYPES) {
-        int score = 0;
-        for (const auto& keyword : emotion.second.typical_phrases) {
-            size_t pos = 0;
-            while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
-                score++;
-                pos += keyword.length();
-            }
-        }
-        emotionScores[emotion.first] = score;
-    }
-
-    // Find emotion with highest score
-    std::string dominantEmotion = "Friendly"; // Default
-    int maxScore = 0;
-    
-    for (const auto& score : emotionScores) {
-        if (score.second > maxScore) {
-            maxScore = score.second;
-            dominantEmotion = score.first;
-        }
-    }
-
-    return dominantEmotion;
 }
 
 // Function to select appropriate personality based on emotion
-BotPersonality SelectPersonality(const std::string& emotion) {
-    std::vector<BotPersonality> matchingPersonalities;
+Personality SelectPersonality(const std::string& emotion) {
+    std::vector<Personality> matchingPersonalities;
     
     // Find personalities that handle this emotion well
-    for (const auto& personality : BOT_PERSONALITIES) {
+    for (const auto& personality : g_personalities) {
         if (std::find(personality.emotions.begin(), 
                       personality.emotions.end(), 
                       emotion) != personality.emotions.end()) {
@@ -393,7 +310,7 @@ BotPersonality SelectPersonality(const std::string& emotion) {
     
     // If no matching personalities, use all personalities
     if (matchingPersonalities.empty()) {
-        matchingPersonalities = BOT_PERSONALITIES;
+        matchingPersonalities = g_personalities;
     }
     
     // Select random personality from matches
@@ -412,7 +329,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
     try {
         // Detect emotion and select appropriate personality
         std::string emotion = DetectEmotion(message);
-        BotPersonality personality = SelectPersonality(emotion);
+        Personality personality = SelectPersonality(emotion);
         
         LOG_DEBUG("module.llm_chat", "Detected emotion: %s, Selected personality: %s", 
                  emotion.c_str(), personality.name.c_str());
@@ -874,6 +791,7 @@ public:
         LLM_Config.NumPredict = sConfigMgr->GetOption<uint32>("LLMChat.LLM.NumPredict", 1024);
         LLM_Config.ContextSize = sConfigMgr->GetOption<uint32>("LLMChat.LLM.ContextSize", 4096);
         LLM_Config.RepeatPenalty = sConfigMgr->GetOption<float>("LLMChat.LLM.RepeatPenalty", 1.2f);
+        LLM_Config.PersonalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "mod_llm_chat/conf/personalities.json");
 
         // Log the loaded configuration
         LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
@@ -897,14 +815,10 @@ public:
         LOG_INFO("module.llm_chat", "RepeatPenalty: %.2f", LLM_Config.RepeatPenalty);
         LOG_INFO("module.llm_chat", "=== End Configuration ===");
 
-        LLM_Config.PersonalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "conf/personalities.conf");
-        
         // Load personalities
-        BOT_PERSONALITIES = LoadPersonalities(LLM_Config.PersonalityFile);
-        
-        if (BOT_PERSONALITIES.empty()) {
+        if (!LoadPersonalities(LLM_Config.PersonalityFile)) {
             LOG_ERROR("module.llm_chat", "No personalities loaded! Using default personality.");
-            BOT_PERSONALITIES.push_back({
+            g_personalities.push_back({
                 "Default",
                 "You are a friendly and helpful player who enjoys casual conversation.",
                 {"Friendly", "Helpful", "Excited"}
@@ -912,70 +826,41 @@ public:
         }
     }
 
-    std::vector<BotPersonality> LoadPersonalities(const std::string& filename) {
-        std::vector<BotPersonality> personalities;
-        std::ifstream file(filename);
-        
-        if (!file.is_open()) {
-            LOG_ERROR("module.llm_chat", "Failed to open personality file: %s", filename.c_str());
-            return personalities;
-        }
-
+    bool LoadPersonalities(std::string const& filename) {
         try {
-            json j;
-            file >> j;
-
-            // Load emotion types first
-            if (j.contains("emotion_types")) {
-                for (const auto& [emotion, data] : j["emotion_types"].items()) {
-                    EmotionType et;
-                    et.response_style = data["response_style"];
-                    et.typical_phrases = data["typical_phrases"].get<std::vector<std::string>>();
-                    EMOTION_TYPES[emotion] = et;
-                }
+            std::ifstream file(filename);
+            if (!file.is_open()) {
+                LOG_ERROR("module.llm_chat", "Failed to open personality file: {}", filename);
+                return false;
             }
 
+            nlohmann::json json_data;
+            file >> json_data;
+
             // Load personalities
-            for (const auto& p : j["personalities"]) {
-                BotPersonality personality;
+            g_personalities.clear();
+            for (const auto& p : json_data["personalities"]) {
+                Personality personality;
                 personality.id = p["id"];
                 personality.name = p["name"];
                 personality.prompt = p["prompt"];
                 personality.emotions = p["emotions"].get<std::vector<std::string>>();
-                
-                // Load traits
-                personality.traits.gaming_experience = p["traits"]["gaming_experience"];
-                personality.traits.chattiness = p["traits"]["chattiness"];
-                personality.traits.humor_level = p["traits"]["humor_level"];
-                personality.traits.formality = p["traits"]["formality"];
-                
-                // Load interests
+                personality.traits = p["traits"];
                 personality.interests = p["interests"].get<std::vector<std::string>>();
-                
-                // Load chat style
-                const auto& style = p["chat_style"];
-                personality.chat_style.uses_emotes = style.value("uses_emotes", false);
-                personality.chat_style.uses_slang = style.value("uses_slang", false);
-                personality.chat_style.typo_frequency = style.value("typo_frequency", "none");
-                personality.chat_style.uses_technical_terms = style.value("uses_technical_terms", false);
-                personality.chat_style.explains_concepts = style.value("explains_concepts", false);
-                personality.chat_style.uses_memes = style.value("uses_memes", false);
-                personality.chat_style.uses_references = style.value("uses_references", false);
-                personality.chat_style.philosophical_tangents = style.value("philosophical_tangents", false);
-                personality.chat_style.random_observations = style.value("random_observations", false);
-                
-                personalities.push_back(personality);
-                LOG_DEBUG("module.llm_chat", "Loaded personality: %s", personality.name.c_str());
+                personality.chat_style = p["chat_style"];
+                g_personalities.push_back(personality);
             }
-        }
-        catch (const json::exception& e) {
-            LOG_ERROR("module.llm_chat", "JSON parsing error: %s", e.what());
-            return std::vector<BotPersonality>();
-        }
 
-        LOG_INFO("module.llm_chat", "Loaded %u personalities and %u emotion types", 
-            uint32(personalities.size()), uint32(EMOTION_TYPES.size()));
-        return personalities;
+            // Load emotion types
+            g_emotion_types = json_data["emotion_types"];
+
+            LOG_INFO("module.llm_chat", "Loaded {} personalities from {}", g_personalities.size(), filename);
+            return true;
+        }
+        catch (const std::exception& e) {
+            LOG_ERROR("module.llm_chat", "Error loading personalities: {}", e.what());
+            return false;
+        }
     }
 };
 
@@ -1054,8 +939,20 @@ public:
     }
 };
 
-void Add_LLMChatScripts()
-{
+class LLMChat_WorldScript : public WorldScript {
+public:
+    LLMChat_WorldScript() : WorldScript("LLMChat_WorldScript") {}
+
+    void OnStartup() override {
+        std::string personalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "mod_llm_chat/conf/personalities.json");
+        if (!LoadPersonalities(personalityFile)) {
+            LOG_ERROR("module.llm_chat", "Failed to load personalities!");
+        }
+    }
+};
+
+void AddLLMChatScripts() {
+    new LLMChat_WorldScript();
     new LLMChatAnnounce();
     new LLMChatConfig();
     new LLMChatPlayerScript();
