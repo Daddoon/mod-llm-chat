@@ -856,11 +856,24 @@ public:
         // Load personalities
         if (!LoadPersonalities(LLM_Config.PersonalityFile)) {
             LOG_ERROR("module.llm_chat", "No personalities loaded! Using default personality.");
-            g_personalities.push_back({
-                "Default",
-                "You are a friendly and helpful player who enjoys casual conversation.",
-                {"Friendly", "Helpful", "Excited"}
-            });
+            Personality defaultPersonality;
+            defaultPersonality.id = "default";
+            defaultPersonality.name = "Default";
+            defaultPersonality.prompt = "You are a friendly and helpful player who enjoys casual conversation.";
+            defaultPersonality.emotions = {"Friendly", "Helpful", "Excited"};
+            defaultPersonality.traits = {
+                {"gaming_experience", "moderate"},
+                {"chattiness", "moderate"},
+                {"humor_level", "moderate"},
+                {"formality", "low"}
+            };
+            defaultPersonality.interests = {"gaming", "socializing", "helping"};
+            defaultPersonality.chat_style = {
+                {"uses_emotes", true},
+                {"uses_slang", true},
+                {"typo_frequency", "occasional"}
+            };
+            g_personalities.push_back(defaultPersonality);
         }
     }
 
