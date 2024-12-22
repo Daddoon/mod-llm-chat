@@ -4,6 +4,20 @@
 ** Based on LLM Chat integration
 */
 
+#include <fstream>
+#include <random>
+#include <string>
+#include <map>
+#include <vector>
+#include <algorithm>
+
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/version.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <nlohmann/json.hpp>
+
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Config.h"
@@ -13,19 +27,12 @@
 #include "Guild.h"
 #include "ChannelMgr.h"
 #include "mod_llm_chat.h"
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/beast/version.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <nlohmann/json.hpp>
 #include "mod-playerbots/src/PlayerbotAI.h"
 #include "mod-playerbots/src/PlayerbotMgr.h"
 #include "WorldSession.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
-#include <random>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
