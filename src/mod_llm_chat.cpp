@@ -412,13 +412,13 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         std::string contextPrompt = 
             personality.prompt + "\n\n"
             "Additional guidelines:\n"
-            "- Provide thoughtful responses (2-3 sentences) that demonstrate your character's depth\n"
-            "- Reference specific locations, events, or customs from World of Warcraft lore\n"
-            "- Let your character's background and experiences shape your perspective\n"
-            "- Maintain a natural conversational tone while staying true to your character\n"
-            "- React to the emotional context and subject matter appropriately\n"
+            "- Provide helpful responses (2-3 sentences) that address the question directly\n"
+            "- You can discuss both in-game and real-world topics naturally\n"
+            "- Stay in character but be practical and helpful with any subject\n"
+            "- Give accurate and useful information while maintaining your personality\n"
+            "- Be friendly and engaging while sharing your knowledge\n"
             "- If referring to the player, use their name: " + playerName + "\n\n"
-            "Respond naturally as your character to this message from " + playerName + ": " + message;
+            "Respond helpfully to this message from " + playerName + ": " + message;
 
         LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
 
