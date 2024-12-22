@@ -555,13 +555,13 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             {"stream", false},
             {"options", {
                 {"temperature", 0.8},     // Slightly more creative
-                {"num_predict", 250},     // Longer responses
-                {"num_ctx", 2048},        // Larger context window
+                {"num_predict", 1024},    // Much longer responses allowed
+                {"num_ctx", 4096},        // Larger context window
                 {"num_thread", std::thread::hardware_concurrency()},
                 {"top_k", 40},            // More diverse token selection
                 {"top_p", 0.9},           // More varied responses
                 {"repeat_penalty", 1.2},   // Avoid repetition
-                {"stop", {"\n\n", "Human:", "Assistant:"}} // Better stop tokens
+                {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}} // Better stop tokens that won't cut off too early
             }}
         };
 

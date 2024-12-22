@@ -6,18 +6,18 @@ This module enables AI chat interactions in World of Warcraft using either Ollam
 
 ### System Requirements
 
--   AzerothCore v5.0.0+
--   libcurl development libraries
--   nlohmann-json library (version 3.2.0 or higher)
--   Ollama or LM Studio installed locally
--   CMake 3.5+ (included with AzerothCore)
+- AzerothCore v5.0.0+
+- libcurl development libraries
+- nlohmann-json library (version 3.2.0 or higher)
+- Ollama or LM Studio installed locally
+- CMake 3.5+ (included with AzerothCore)
 
 ### LLM Requirements
 
 Choose one:
 
--   Ollama with llama3.2 model (3B for CPU, 8B for GPU)
--   LM Studio with compatible model
+- Ollama with llama3.2 model (3B for CPU, 8B for GPU)
+- LM Studio with compatible model
 
 ## Installation
 
@@ -46,10 +46,20 @@ ollama pull llama3.2:3b
 Verify installation
 ollama list
 
+recommend downloading the uncensored model of the 1b model
+
+#Censored Origional Model
+
+ollama pull llama3.2:1b
+
+#Uncensored Model
+
+ollama pull socialnetwooky/llama3.2-abliterated:1b_q8
+
 To switch between models, update your `mod_llm_chat.conf` file:
 
--   For CPU servers: `LLM.Ollama.Model = "llama3.2:3b"`
--   For GPU servers: `LLM.Ollama.Model = "llama3.2:8b"`
+- For CPU servers: `LLM.Ollama.Model = "llama3.2:3b"`
+- For GPU servers: `LLM.Ollama.Model = "llama3.2:8b"`
 
 #### Option B: LM Studio
 
@@ -66,39 +76,39 @@ To switch between models, update your `mod_llm_chat.conf` file:
 
 1. "Error communicating with LLM service"
 
-    - Verify Ollama/LM Studio is running
+   - Verify Ollama/LM Studio is running
 
-    ```bash
-    sudo systemctl status ollama
-    sudo systemctl restart ollama  # if needed
-    ```
+   ```bash
+   sudo systemctl status ollama
+   sudo systemctl restart ollama  # if needed
+   ```
 
-    - Check endpoints in configuration
-    - Verify model is properly installed
+   - Check endpoints in configuration
+   - Verify model is properly installed
 
 2. "Required library not found"
 
-    ```bash
-    # Reinstall dependencies
-    sudo apt install -y libcurl4-openssl-dev nlohmann-json3-dev
-    ```
+   ```bash
+   # Reinstall dependencies
+   sudo apt install -y libcurl4-openssl-dev nlohmann-json3-dev
+   ```
 
 3. No AI Response
-    - Check module is enabled in configuration
-    - Verify chat range setting
-    - Check server logs for errors
+   - Check module is enabled in configuration
+   - Verify chat range setting
+   - Check server logs for errors
 
 ### Logs
 
 Check the following for error messages:
 
--   WorldServer console output
--   Server logs in `/var/log/azerothcore/` or your configured log directory
+- WorldServer console output
+- Server logs in `/var/log/azerothcore/` or your configured log directory
 
 ## Support
 
--   Report issues on GitHub
--   Join AzerothCore Discord for help
+- Report issues on GitHub
+- Join AzerothCore Discord for help
 
 ## License
 
