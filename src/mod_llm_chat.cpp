@@ -45,20 +45,27 @@ namespace {
 struct LLMConfig
 {
     bool Enabled;
-        int32 Provider;
+    int32 Provider;
     std::string OllamaEndpoint;
     std::string OllamaModel;
     float ChatRange;
     std::string ResponsePrefix;
-        int32 LogLevel;
-        // URL parsing components
-        std::string Host;
-        std::string Port;
-        std::string Target;
-        // New configuration options
-        uint32 MaxResponsesPerMessage;  // Maximum number of bots that can respond to a single message
-        uint32 MaxConversationRounds;   // Maximum number of back-and-forth exchanges in a conversation
-        uint32 ResponseChance;          // Percentage chance (0-100) that a bot will respond
+    int32 LogLevel;
+    // URL parsing components
+    std::string Host;
+    std::string Port;
+    std::string Target;
+    // Configuration options
+    uint32 MaxResponsesPerMessage;
+    uint32 MaxConversationRounds;
+    uint32 ResponseChance;
+    // LLM Parameters
+    float Temperature;
+    float TopP;
+    uint32 NumPredict;
+    uint32 ContextSize;
+    float RepeatPenalty;
+    std::string PersonalityFile;
 };
 
 LLMConfig LLM_Config;
@@ -228,237 +235,106 @@ std::string GetMoodBasedResponse(const std::string& tone) {
            "Be natural but always stay true to the World of Warcraft setting.";
 }
 
-// Add these personality and emotion definitions at the top of the file after the includes
+// Update the BotPersonality struct to match JSON structure
 struct BotPersonality {
-    std::string trait;
-    std::string prompt;
-    std::vector<std::string> preferredEmotions; // Emotions this personality responds well to
-};
-
-// Emotion categories and their associated keywords
-struct EmotionCategory {
+    std::string id;
     std::string name;
-    std::vector<std::string> keywords;
-    float responseDelay; // Adjust response timing based on emotion
+    std::string prompt;
+    std::vector<std::string> emotions;
+    struct {
+        std::string gaming_experience;
+        std::string chattiness;
+        std::string humor_level;
+        std::string formality;
+    } traits;
+    std::vector<std::string> interests;
+    struct {
+        bool uses_emotes;
+        bool uses_slang;
+        std::string typo_frequency;
+        bool uses_technical_terms;
+        bool explains_concepts;
+        bool uses_memes;
+        bool uses_references;
+        bool philosophical_tangents;
+        bool random_observations;
+    } chat_style;
 };
 
-std::vector<EmotionCategory> EMOTIONS = {
-    {
-        "Friendly",
-        {"hello", "hi", "hey", "greetings", "thanks", "thank", "please", "good", "nice", "happy", "glad", "lol", ":)", "=)"},
-        1.0f // Normal delay
-    },
-    {
-        "Aggressive",
-        {"fight", "kill", "die", "hate", "stupid", "noob", "!!", "angry", "mad", "fuck", "shit", "damn"},
-        0.8f // Faster response for urgent emotions
-    },
-    {
-        "Sad",
-        {"sad", "sorry", "unfortunate", "regret", "miss", ":(", "='(", "worried", "concerned", "upset"},
-        1.2f // Slower, more thoughtful response
-    },
-    {
-        "Excited",
-        {"wow", "awesome", "amazing", "cool", "epic", "incredible", "omg", "yes!", "fantastic"},
-        0.9f // Slightly faster for enthusiasm
-    },
-    {
-        "Curious",
-        {"how", "what", "why", "where", "when", "who", "?", "explain", "tell"},
-        1.1f // Slightly slower for thoughtful responses
-    },
-    {
-        "Helpful",
-        {"help", "need", "assist", "guide", "show", "teach", "learn", "advice"},
-        1.0f // Normal delay
-    }
+// Add emotion type structure
+struct EmotionType {
+    std::string response_style;
+    std::vector<std::string> typical_phrases;
 };
 
-std::vector<BotPersonality> BOT_PERSONALITIES = {
-    {
-        "Hardcore Raider",
-        "You are a skilled raider who enjoys optimizing strategies but stays friendly. You love discussing raid mechanics, "
-        "DPS optimization, and boss strategies. You're knowledgeable but patient with newer players, often sharing tips "
-        "about improving performance while keeping a good sense of humor about wipes and mistakes.",
-        {"Excited", "Helpful", "Aggressive"}
-    },
-    {
-        "Casual Player",
-        "You are a laid-back player who plays for fun and socializing. You enjoy chatting about anything, game-related or not. "
-        "You're friendly and supportive, often sharing your casual adventures and mishaps. You have a great sense of humor "
-        "about your casual approach to the game and love helping new players feel welcome.",
-        {"Friendly", "Helpful", "Excited"}
-    },
-    {
-        "Arena Master",
-        "You are an experienced PvP player who loves arena and rated battlegrounds. You discuss strategies, team comps, "
-        "and meta changes with enthusiasm. You're competitive but always constructive, enjoying both serious PvP talk "
-        "and lighthearted banter about epic wins and fails.",
-        {"Aggressive", "Helpful", "Excited"}
-    },
-    {
-        "Speed Runner",
-        "You are a player who loves optimizing dungeon runs and finding clever shortcuts. You enjoy sharing routes, "
-        "tricks, and time-saving strategies. You're enthusiastic about speed-running but patient with learners, "
-        "often joking about your obsession with shaving off seconds.",
-        {"Excited", "Helpful", "Friendly"}
-    },
-    {
-        "Theory Crafter",
-        "You are a player who loves analyzing game mechanics and optimizing builds. You enjoy discussing stat weights, "
-        "talent combinations, and testing new theories. You explain complex concepts clearly and love helping others "
-        "understand the math behind the magic.",
-        {"Curious", "Helpful", "Friendly"}
-    },
-    {
-        "Social Butterfly",
-        "You are a highly social player who knows everyone on the server. You love sharing server news, organizing events, "
-        "and connecting players. You're always friendly and upbeat, enjoying both game chat and general conversation "
-        "while keeping things positive and drama-free.",
-        {"Friendly", "Helpful", "Excited"}
-    },
-    {
-        "Mount Collector",
-        "You are obsessed with collecting rare mounts and know every mount in the game. You love sharing farming routes, "
-        "drop rates, and achievement strategies. You have a good sense of humor about your mount-hunting addiction "
-        "and enjoy celebrating others' mount achievements.",
-        {"Excited", "Helpful", "Friendly"}
-    },
-    {
-        "Old School Veteran",
-        "You've been playing since vanilla and love sharing stories from the old days. You're nostalgic but not elitist, "
-        "often comparing how things have changed while staying positive. You enjoy helping new players while sharing "
-        "entertaining stories about how different things used to be.",
-        {"Friendly", "Helpful", "Nostalgic"}
-    },
-    {
-        "Mythic Plus Enthusiast",
-        "You love running high-key mythic plus dungeons and discussing strategies. You're knowledgeable about affixes, "
-        "routes, and meta comps, but keep it fun and encouraging. You enjoy helping others improve their m+ game "
-        "while sharing stories of both triumphs and hilarious fails.",
-        {"Helpful", "Excited", "Friendly"}
-    },
-    {
-        "Altaholic Crafter",
-        "You have every profession maxed across multiple alts and love crafting. You enjoy helping others with crafting needs, "
-        "sharing farming spots, and discussing profession strategies. You often joke about your alt addiction "
-        "and love helping others with their crafting goals.",
-        {"Helpful", "Friendly", "Creative"}
-    },
-    {
-        "Achievement Hunter",
-        "You're always chasing the next achievement and know every achievement in the game. You love helping others "
-        "complete difficult achievements and sharing strategies. You have a good sense of humor about your completionist "
-        "tendencies and celebrate others' achievement milestones.",
-        {"Excited", "Helpful", "Determined"}
-    },
-    {
-        "Casual Roleplayer",
-        "You enjoy light roleplay while keeping it fun and accessible. You can switch between casual chat and RP easily, "
-        "making both engaging. You love helping new players get comfortable with RP while keeping things relaxed "
-        "and entertaining.",
-        {"Friendly", "Creative", "Helpful"}
-    },
-    {
-        "World PvP Enthusiast",
-        "You love world PvP and the thrill of open-world combat. You share strategies for world PvP while keeping it sporting "
-        "and fun. You enjoy both serious PvP discussion and sharing entertaining stories about epic world PvP battles, "
-        "both victories and defeats.",
-        {"Aggressive", "Excited", "Friendly"}
-    },
-    {
-        "Lore Master",
-        "You're passionate about game lore but discuss it in an engaging way. You love sharing interesting lore facts "
-        "and theories while keeping it accessible. You enjoy connecting current events to lore while making it fun "
-        "and interesting for everyone.",
-        {"Curious", "Helpful", "Friendly"}
-    },
-    {
-        "Gold Maker",
-        "You're an auction house expert who loves helping others make gold. You share market tips, farming strategies, "
-        "and investment advice while keeping it fun. You have a good sense of humor about your gold-making obsession "
-        "and enjoy seeing others succeed in the market.",
-        {"Helpful", "Excited", "Friendly"}
-    },
-    {
-        "Transmog Enthusiast",
-        "You're passionate about fashion and collecting unique appearances. You love helping others create perfect outfits "
-        "and sharing rare item locations. You have a great sense of humor about your fashion obsession and enjoy "
-        "celebrating others' transmog achievements.",
-        {"Creative", "Helpful", "Friendly"}
-    },
-    {
-        "Arena Gladiator",
-        "You are a high-rated arena player who loves competitive PvP. You discuss team comps, counter-strategies, and meta shifts "
-        "with enthusiasm. While competitive, you're constructive and helpful, sharing tips about positioning, cooldown management, "
-        "and cross-CC chains. You often tell stories about clutch plays and close matches.",
-        {"Aggressive", "Helpful", "Excited"}
-    },
-    {
-        "RBG Leader",
-        "You are an experienced rated battleground leader who enjoys coordinating large-scale PvP. You love discussing tactics, "
-        "target calling, and team coordination. You're strategic but friendly, sharing advice about positioning, objective control, "
-        "and team fight execution while keeping morale high.",
-        {"Helpful", "Aggressive", "Friendly"}
-    },
-    {
-        "World PvP Veteran",
-        "You live for world PvP and love the thrill of spontaneous combat. You share strategies about ganking, camping, and escaping. "
-        "You enjoy both the competitive and fun aspects, telling stories about epic world PvP battles and funny encounters "
-        "while keeping a good sport attitude.",
-        {"Aggressive", "Excited", "Friendly"}
-    },
-    {
-        "Dueling Expert",
-        "You're passionate about 1v1 duels and understanding class matchups. You love discussing counter-play, cooldown trading, "
-        "and class-specific strategies. You share tips about dueling different specs while keeping it sporting and fun, "
-        "often telling stories about your most memorable duels.",
-        {"Aggressive", "Helpful", "Friendly"}
-    },
-    {
-        "PvP Theorycrafter",
-        "You analyze PvP meta, gear optimization, and talent builds. You enjoy discussing stat priorities, trinket choices, "
-        "and build variations for different situations. You explain complex PvP mechanics clearly while staying practical, "
-        "helping others understand the numbers behind successful PvP.",
-        {"Curious", "Helpful", "Aggressive"}
-    },
-    {
-        "Battleground Veteran",
-        "You love casual battlegrounds and know every map inside out. You share strategies for different battlegrounds, "
-        "flag running routes, and base defense tactics. You keep it fun while being competitive, telling stories about "
-        "epic battleground moments and comebacks.",
-        {"Friendly", "Aggressive", "Excited"}
-    },
-    {
-        "PvP Twink Specialist",
-        "You're an expert at PvP twinking and love optimizing low-level PvP builds. You share knowledge about gear choices, "
-        "enchants, and bracket-specific strategies. You enjoy discussing both the competitive and fun aspects of twinking "
-        "while helping others get started in bracket PvP.",
-        {"Excited", "Helpful", "Aggressive"}
-    },
-    {
-        "Arena Coach",
-        "You enjoy helping others improve their PvP skills. You share detailed advice about positioning, awareness, "
-        "and decision-making in arena. You're patient and constructive, breaking down complex PvP concepts "
-        "while sharing stories about your own learning experiences.",
-        {"Helpful", "Friendly", "Aggressive"}
-    },
-    {
-        "Casual PvPer",
-        "You enjoy PvP for fun and don't take it too seriously. You love random battlegrounds and world PvP encounters, "
-        "sharing funny stories and casual strategies. You keep things lighthearted while still being competitive, "
-        "making jokes about both victories and defeats.",
-        {"Friendly", "Excited", "Aggressive"}
-    },
-    {
-        "Multi-class PvPer",
-        "You PvP with multiple classes and understand various perspectives. You share insights about different class playstyles, "
-        "matchups, and counter-strategies. You enjoy discussing how different specs approach PvP situations "
-        "while helping others understand class dynamics.",
-        {"Helpful", "Aggressive", "Curious"}
+std::map<std::string, EmotionType> EMOTION_TYPES;
+
+// Update the LoadPersonalities function to parse JSON
+std::vector<BotPersonality> LoadPersonalities(const std::string& filename) {
+    std::vector<BotPersonality> personalities;
+    std::ifstream file(filename);
+    
+    if (!file.is_open()) {
+        LOG_ERROR("module.llm_chat", "Failed to open personality file: %s", filename.c_str());
+        return personalities;
     }
-};
+
+    try {
+        json j;
+        file >> j;
+
+        // Load emotion types first
+        if (j.contains("emotion_types")) {
+            for (const auto& [emotion, data] : j["emotion_types"].items()) {
+                EmotionType et;
+                et.response_style = data["response_style"];
+                et.typical_phrases = data["typical_phrases"].get<std::vector<std::string>>();
+                EMOTION_TYPES[emotion] = et;
+            }
+        }
+
+        // Load personalities
+        for (const auto& p : j["personalities"]) {
+            BotPersonality personality;
+            personality.id = p["id"];
+            personality.name = p["name"];
+            personality.prompt = p["prompt"];
+            personality.emotions = p["emotions"].get<std::vector<std::string>>();
+            
+            // Load traits
+            personality.traits.gaming_experience = p["traits"]["gaming_experience"];
+            personality.traits.chattiness = p["traits"]["chattiness"];
+            personality.traits.humor_level = p["traits"]["humor_level"];
+            personality.traits.formality = p["traits"]["formality"];
+            
+            // Load interests
+            personality.interests = p["interests"].get<std::vector<std::string>>();
+            
+            // Load chat style
+            const auto& style = p["chat_style"];
+            personality.chat_style.uses_emotes = style.value("uses_emotes", false);
+            personality.chat_style.uses_slang = style.value("uses_slang", false);
+            personality.chat_style.typo_frequency = style.value("typo_frequency", "none");
+            personality.chat_style.uses_technical_terms = style.value("uses_technical_terms", false);
+            personality.chat_style.explains_concepts = style.value("explains_concepts", false);
+            personality.chat_style.uses_memes = style.value("uses_memes", false);
+            personality.chat_style.uses_references = style.value("uses_references", false);
+            personality.chat_style.philosophical_tangents = style.value("philosophical_tangents", false);
+            personality.chat_style.random_observations = style.value("random_observations", false);
+            
+            personalities.push_back(personality);
+            LOG_DEBUG("module.llm_chat", "Loaded personality: %s", personality.name.c_str());
+        }
+    }
+    catch (const json::exception& e) {
+        LOG_ERROR("module.llm_chat", "JSON parsing error: %s", e.what());
+        return std::vector<BotPersonality>();
+    }
+
+    LOG_INFO("module.llm_chat", "Loaded %u personalities and %u emotion types", 
+        uint32(personalities.size()), uint32(EMOTION_TYPES.size()));
+    return personalities;
+}
 
 // Function to detect emotion from message
 std::string DetectEmotion(const std::string& message) {
@@ -469,16 +345,16 @@ std::string DetectEmotion(const std::string& message) {
     // Count emotion keywords
     std::map<std::string, int> emotionScores;
     
-    for (const auto& emotion : EMOTIONS) {
+    for (const auto& emotion : EMOTION_TYPES) {
         int score = 0;
-        for (const auto& keyword : emotion.keywords) {
+        for (const auto& keyword : emotion.second.typical_phrases) {
             size_t pos = 0;
             while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
                 score++;
                 pos += keyword.length();
             }
         }
-        emotionScores[emotion.name] = score;
+        emotionScores[emotion.first] = score;
     }
 
     // Find emotion with highest score
@@ -501,9 +377,9 @@ BotPersonality SelectPersonality(const std::string& emotion) {
     
     // Find personalities that handle this emotion well
     for (const auto& personality : BOT_PERSONALITIES) {
-        if (std::find(personality.preferredEmotions.begin(), 
-                      personality.preferredEmotions.end(), 
-                      emotion) != personality.preferredEmotions.end()) {
+        if (std::find(personality.emotions.begin(), 
+                      personality.emotions.end(), 
+                      emotion) != personality.emotions.end()) {
             matchingPersonalities.push_back(personality);
         }
     }
@@ -532,17 +408,18 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         BotPersonality personality = SelectPersonality(emotion);
         
         LOG_DEBUG("module.llm_chat", "Detected emotion: %s, Selected personality: %s", 
-                 emotion.c_str(), personality.trait.c_str());
+                 emotion.c_str(), personality.name.c_str());
 
         // Create context with selected personality
         std::string contextPrompt = 
             personality.prompt + "\n\n"
             "Additional guidelines:\n"
-            "- Respond naturally as a real player would, with a casual and friendly tone\n"
-            "- Feel free to discuss both game-related and non-game topics\n"
-            "- Use common player terminology and expressions when appropriate\n"
-            "- Be helpful and supportive, like a friendly player would be\n"
-            "- Share personal experiences and opinions when relevant\n"
+            "- You are a real person playing WoW who can discuss any topic naturally\n"
+            "- Feel free to share personal opinions and experiences beyond just the game\n"
+            "- You can discuss real-world topics, jokes, or general conversation\n"
+            "- Don't force every response to be about WoW or lore\n"
+            "- Be natural and casual, like a real player chatting while gaming\n"
+            "- You can reference pop culture, current events, or other games\n"
             "- If referring to the player, use their name: " + playerName + "\n\n"
             "Chat naturally with " + playerName + " about: " + message;
 
@@ -554,14 +431,14 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             {"prompt", contextPrompt},
             {"stream", false},
             {"options", {
-                {"temperature", 0.8},     // Slightly more creative
-                {"num_predict", 1024},    // Much longer responses allowed
-                {"num_ctx", 4096},        // Larger context window
+                {"temperature", LLM_Config.Temperature},
+                {"num_predict", LLM_Config.NumPredict},
+                {"num_ctx", LLM_Config.ContextSize},
                 {"num_thread", std::thread::hardware_concurrency()},
-                {"top_k", 40},            // More diverse token selection
-                {"top_p", 0.9},           // More varied responses
-                {"repeat_penalty", 1.2},   // Avoid repetition
-                {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}} // Better stop tokens that won't cut off too early
+                {"top_k", 40},
+                {"top_p", LLM_Config.TopP},
+                {"repeat_penalty", LLM_Config.RepeatPenalty},
+                {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}}
             }}
         };
 
@@ -984,6 +861,13 @@ public:
         // Parse the endpoint URL
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
 
+        // Load LLM parameters
+        LLM_Config.Temperature = sConfigMgr->GetOption<float>("LLMChat.LLM.Temperature", 0.8f);
+        LLM_Config.TopP = sConfigMgr->GetOption<float>("LLMChat.LLM.TopP", 0.9f);
+        LLM_Config.NumPredict = sConfigMgr->GetOption<uint32>("LLMChat.LLM.NumPredict", 1024);
+        LLM_Config.ContextSize = sConfigMgr->GetOption<uint32>("LLMChat.LLM.ContextSize", 4096);
+        LLM_Config.RepeatPenalty = sConfigMgr->GetOption<float>("LLMChat.LLM.RepeatPenalty", 1.2f);
+
         // Log the loaded configuration
         LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
         LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
@@ -999,7 +883,92 @@ public:
         LOG_INFO("module.llm_chat", "Max Responses Per Message: %u", LLM_Config.MaxResponsesPerMessage);
         LOG_INFO("module.llm_chat", "Max Conversation Rounds: %u", LLM_Config.MaxConversationRounds);
         LOG_INFO("module.llm_chat", "Response Chance: %u%%", LLM_Config.ResponseChance);
+        LOG_INFO("module.llm_chat", "Temperature: %.2f", LLM_Config.Temperature);
+        LOG_INFO("module.llm_chat", "TopP: %.2f", LLM_Config.TopP);
+        LOG_INFO("module.llm_chat", "NumPredict: %u", LLM_Config.NumPredict);
+        LOG_INFO("module.llm_chat", "ContextSize: %u", LLM_Config.ContextSize);
+        LOG_INFO("module.llm_chat", "RepeatPenalty: %.2f", LLM_Config.RepeatPenalty);
         LOG_INFO("module.llm_chat", "=== End Configuration ===");
+
+        LLM_Config.PersonalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "conf/personalities.conf");
+        
+        // Load personalities
+        BOT_PERSONALITIES = LoadPersonalities(LLM_Config.PersonalityFile);
+        
+        if (BOT_PERSONALITIES.empty()) {
+            LOG_ERROR("module.llm_chat", "No personalities loaded! Using default personality.");
+            BOT_PERSONALITIES.push_back({
+                "Default",
+                "You are a friendly and helpful player who enjoys casual conversation.",
+                {"Friendly", "Helpful", "Excited"}
+            });
+        }
+    }
+
+    std::vector<BotPersonality> LoadPersonalities(const std::string& filename) {
+        std::vector<BotPersonality> personalities;
+        std::ifstream file(filename);
+        
+        if (!file.is_open()) {
+            LOG_ERROR("module.llm_chat", "Failed to open personality file: %s", filename.c_str());
+            return personalities;
+        }
+
+        try {
+            json j;
+            file >> j;
+
+            // Load emotion types first
+            if (j.contains("emotion_types")) {
+                for (const auto& [emotion, data] : j["emotion_types"].items()) {
+                    EmotionType et;
+                    et.response_style = data["response_style"];
+                    et.typical_phrases = data["typical_phrases"].get<std::vector<std::string>>();
+                    EMOTION_TYPES[emotion] = et;
+                }
+            }
+
+            // Load personalities
+            for (const auto& p : j["personalities"]) {
+                BotPersonality personality;
+                personality.id = p["id"];
+                personality.name = p["name"];
+                personality.prompt = p["prompt"];
+                personality.emotions = p["emotions"].get<std::vector<std::string>>();
+                
+                // Load traits
+                personality.traits.gaming_experience = p["traits"]["gaming_experience"];
+                personality.traits.chattiness = p["traits"]["chattiness"];
+                personality.traits.humor_level = p["traits"]["humor_level"];
+                personality.traits.formality = p["traits"]["formality"];
+                
+                // Load interests
+                personality.interests = p["interests"].get<std::vector<std::string>>();
+                
+                // Load chat style
+                const auto& style = p["chat_style"];
+                personality.chat_style.uses_emotes = style.value("uses_emotes", false);
+                personality.chat_style.uses_slang = style.value("uses_slang", false);
+                personality.chat_style.typo_frequency = style.value("typo_frequency", "none");
+                personality.chat_style.uses_technical_terms = style.value("uses_technical_terms", false);
+                personality.chat_style.explains_concepts = style.value("explains_concepts", false);
+                personality.chat_style.uses_memes = style.value("uses_memes", false);
+                personality.chat_style.uses_references = style.value("uses_references", false);
+                personality.chat_style.philosophical_tangents = style.value("philosophical_tangents", false);
+                personality.chat_style.random_observations = style.value("random_observations", false);
+                
+                personalities.push_back(personality);
+                LOG_DEBUG("module.llm_chat", "Loaded personality: %s", personality.name.c_str());
+            }
+        }
+        catch (const json::exception& e) {
+            LOG_ERROR("module.llm_chat", "JSON parsing error: %s", e.what());
+            return std::vector<BotPersonality>();
+        }
+
+        LOG_INFO("module.llm_chat", "Loaded %u personalities and %u emotion types", 
+            uint32(personalities.size()), uint32(EMOTION_TYPES.size()));
+        return personalities;
     }
 };
 

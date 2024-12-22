@@ -83,4 +83,52 @@ LLMChat.MaxConversationRounds = 3
 
 LLMChat.ResponseChance = 75
 
+#    LLMChat.LLM.Temperature
+#        Description: Controls response creativity (0.1-2.0)
+#        Default:     1.2  - (More creative responses)
+#                     0.1  - (More focused/deterministic)
+#                     2.0  - (Maximum creativity)
+
+LLMChat.LLM.Temperature = 1.5
+
+#    LLMChat.LLM.TopP
+#        Description: Controls response diversity (0.1-1.0)
+#        Default:     0.95  - (High diversity)
+#                     0.1   - (More focused)
+#                     1.0   - (Maximum diversity)
+
+LLMChat.LLM.TopP = 0.95
+
+#    LLMChat.LLM.NumPredict
+#        Description: Maximum response length in tokens
+#        Default:     1024  - (Standard length)
+#                     256   - (Short responses)
+#                     2048  - (Long responses)
+
+LLMChat.LLM.NumPredict = 2048
+
+#    LLMChat.LLM.ContextSize
+#        Description: Size of context window in tokens
+#        Default:     4096  - (Standard context)
+#                     2048  - (Smaller context)
+#                     8192  - (Larger context)
+
+LLMChat.LLM.ContextSize = 4096
+
+#    LLMChat.LLM.RepeatPenalty
+#        Description: Penalty for repeating words (1.0-2.0)
+#        Default:     1.3  - (Higher penalty for more variation)
+#                     1.0  - (No penalty)
+#                     2.0  - (Maximum penalty)
+
+LLMChat.LLM.RepeatPenalty = 1.3
+
+#    LLMChat.PersonalityFile
+#        Description: Path to personality definitions JSON file
+#        Default:    "conf/personalities.json"
+#        Contains personality definitions, emotion types, and chat styles
+#        Edit this file to add or modify AI personalities
+
+LLMChat.PersonalityFile = "conf/personalities.json"
+
 ################################################################################################### 
