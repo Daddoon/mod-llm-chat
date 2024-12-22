@@ -45,9 +45,10 @@ LLMChat.ChatRange = 25.0
 
 #    LLMChat.ResponsePrefix
 #        Description: Prefix for responses (empty for natural chat)
-#        Default:    ""
+#        Default:    ""  - (No prefix for natural chat)
+#                    "[AI] "  - (Example prefix)
 
-LLMChat.ResponsePrefix = "[AI] "
+LLMChat.ResponsePrefix = ""
 
 #    LLMChat.LogLevel
 #        Description: Level of logging detail
