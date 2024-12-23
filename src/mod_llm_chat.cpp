@@ -10,6 +10,11 @@
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <queue>
+#include <mutex>
+#include <thread>
+#include <future>
+#include <atomic>
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -73,12 +78,39 @@ struct LLMConfig
     uint32 ContextSize;
     float RepeatPenalty;
     std::string PersonalityFile;
+    // New configuration options
+    uint32 ResponseCooldown;
+    uint32 GlobalCooldown;
+    uint32 MaxQueueSize;
+    uint32 QueueTimeout;
 };
 
 LLMConfig LLM_Config;
 
 // Add a conversation counter
 std::map<std::string, uint32> conversationRounds;  // Key: channelName+originalMessage, Value: round count
+std::map<ObjectGuid, uint32> botCooldowns;  // Track individual bot cooldowns
+uint32 lastGlobalResponse = 0;  // Track last global response time
+
+// Add at the top with other global variables
+struct QueuedResponse {
+    uint32 timestamp;
+    Player* sender;
+    std::vector<Player*> responders;  // Now supports multiple responders
+    std::string message;
+    uint32 chatType;
+    TeamId team;
+    uint32 responsesGenerated;  // Track how many responses we've generated
+    uint32 maxResponses;        // How many responses we want for this message
+};
+
+std::queue<QueuedResponse> responseQueue;
+std::mutex queueMutex;
+uint32 const RESPONSE_TIMEOUT = 10000; // 10 seconds timeout
+
+// Add to the global variables section
+std::atomic<uint32> activeThreads(0);
+const uint32 MAX_CONCURRENT_THREADS = 2;  // Maximum concurrent LLM requests
 }
 
 // Helper function to parse URL
@@ -355,7 +387,7 @@ std::string DetectEmotion(const std::string& message) {
     return dominantEmotion;
 }
 
-// Modify QueryLLM to use personality system
+// Modify QueryLLM to be async
 std::string QueryLLM(std::string const& message, const std::string& playerName)
 {
     if (message.empty() || playerName.empty())
@@ -364,135 +396,127 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         return "Error: Invalid input";
     }
 
-    try {
-        // Detect emotion and select appropriate personality
-        std::string emotion = DetectEmotion(message);
-        Personality personality = SelectPersonality(emotion);
-        
-        LOG_DEBUG("module.llm_chat", "Detected emotion: {}, Selected personality: {}", 
-                 emotion, personality.name);
+    // Create a promise to handle the async result
+    std::promise<std::string> responsePromise;
+    auto responseFuture = responsePromise.get_future();
 
-        // Create context with selected personality
-        std::string contextPrompt = 
-            personality.prompt + "\n\n"
-            "Additional guidelines:\n"
-            "- You are a real person playing WoW who can discuss any topic naturally\n"
-            "- Feel free to share personal opinions and experiences beyond just the game\n"
-            "- You can discuss real-world topics, jokes, or general conversation\n"
-            "- Don't force every response to be about WoW or lore\n"
-            "- Be natural and casual, like a real player chatting while gaming\n"
-            "- You can reference pop culture, current events, or other games\n"
-            "- If referring to the player, use their name: " + playerName + "\n\n"
-            "Chat naturally with " + playerName + " about: " + message;
+    // Launch API request in a separate thread
+    std::thread apiThread([message, playerName, &responsePromise]() {
+        try {
+            // Detect emotion and select appropriate personality
+            std::string emotion = DetectEmotion(message);
+            Personality personality = SelectPersonality(emotion);
+            
+            LOG_DEBUG("module.llm_chat", "Detected emotion: {}, Selected personality: {}", 
+                     emotion, personality.name);
 
-        LOG_DEBUG("module.llm_chat", "Context prompt: {}", contextPrompt);
+            // Create context with selected personality
+            std::string contextPrompt = 
+                personality.prompt + "\n\n"
+                "Additional guidelines:\n"
+                "- You are a real person playing WoW who can discuss any topic naturally\n"
+                "- Feel free to share personal opinions and experiences beyond just the game\n"
+                "- You can discuss real-world topics, jokes, or general conversation\n"
+                "- Don't force every response to be about WoW or lore\n"
+                "- Be natural and casual, like a real player chatting while gaming\n"
+                "- You can reference pop culture, current events, or other games\n"
+                "- If referring to the player, use their name: " + playerName + "\n\n"
+                "Chat naturally with " + playerName + " about: " + message;
 
-        // Prepare request payload with emotion-adjusted parameters
-        json requestJson = {
-            {"model", LLM_Config.OllamaModel},
-            {"prompt", contextPrompt},
-            {"stream", false},
-            {"options", {
-                {"temperature", LLM_Config.Temperature},
-                {"num_predict", LLM_Config.NumPredict},
-                {"num_ctx", LLM_Config.ContextSize},
-                {"num_thread", std::thread::hardware_concurrency()},
-                {"top_k", 40},
-                {"top_p", LLM_Config.TopP},
-                {"repeat_penalty", LLM_Config.RepeatPenalty},
-                {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}}
-            }}
-        };
+            LOG_DEBUG("module.llm_chat", "Context prompt: {}", contextPrompt);
 
-        // Adjust parameters based on emotion
-        if (emotion == "Aggressive" || emotion == "Excited") {
-            requestJson["options"]["temperature"] = 0.8; // More varied responses
-            requestJson["options"]["top_p"] = 0.8;      // More creative
+            // Prepare request payload with emotion-adjusted parameters
+            json requestJson = {
+                {"model", LLM_Config.OllamaModel},
+                {"prompt", contextPrompt},
+                {"stream", false},
+                {"options", {
+                    {"temperature", LLM_Config.Temperature},
+                    {"num_predict", LLM_Config.NumPredict},
+                    {"num_ctx", LLM_Config.ContextSize},
+                    {"num_thread", std::thread::hardware_concurrency()},
+                    {"top_k", 40},
+                    {"top_p", LLM_Config.TopP},
+                    {"repeat_penalty", LLM_Config.RepeatPenalty},
+                    {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}}
+                }}
+            };
+
+            // Set up the IO context
+            net::io_context ioc;
+            tcp::resolver resolver(ioc);
+            beast::tcp_stream stream(ioc);
+
+            // Look up the domain name
+            auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
+            LOG_DEBUG("module.llm_chat", "Attempting to connect to {}:{}", LLM_Config.Host, LLM_Config.Port);
+
+            // Make the connection with timeout
+            beast::error_code ec;
+            stream.connect(results, ec);
+            if (ec)
+            {
+                responsePromise.set_value("Error: Cannot connect to Ollama. Please check if Ollama is running.");
+                return;
+            }
+
+            // Set up an HTTP POST request message
+            http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
+            req.set(http::field::host, LLM_Config.Host);
+            req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+            req.set(http::field::content_type, "application/json");
+            req.body() = requestJson.dump();
+            req.prepare_payload();
+
+            // Send the HTTP request
+            http::write(stream, req, ec);
+            if (ec)
+            {
+                responsePromise.set_value("Error: Failed to send request to Ollama");
+                return;
+            }
+
+            // This buffer is used for reading
+            beast::flat_buffer buffer;
+            http::response<http::string_body> res;
+
+            // Receive the HTTP response with timeout
+            http::read(stream, buffer, res, ec);
+            if (ec)
+            {
+                responsePromise.set_value("Error: Failed to get response from Ollama");
+                return;
+            }
+
+            // Gracefully close the socket
+            stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+
+            if (res.result() != http::status::ok)
+            {
+                std::string error = "Error: Ollama service error - " + std::to_string(static_cast<int>(res.result()));
+                responsePromise.set_value(error);
+                return;
+            }
+
+            std::string response = ParseLLMResponse(res.body());
+            responsePromise.set_value(response);
         }
-        else if (emotion == "Sad" || emotion == "Helpful") {
-            requestJson["options"]["temperature"] = 0.6; // More focused responses
-            requestJson["options"]["top_p"] = 0.6;      // More consistent
-        }
-
-        std::string jsonPayload = requestJson.dump();
-        LOG_DEBUG("module.llm_chat", "Request payload: {}", jsonPayload);
-
-        // Set up the IO context
-        net::io_context ioc;
-        tcp::resolver resolver(ioc);
-        beast::tcp_stream stream(ioc);
-
-        // Look up the domain name
-        auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_INFO("module.llm_chat", "Attempting to connect to {}:{}", LLM_Config.Host, LLM_Config.Port);
-
-        // Make the connection
-        beast::error_code ec;
-        stream.connect(results, ec);
-        if (ec)
+        catch (const std::exception& e)
         {
-            LOG_ERROR("module.llm_chat", "Failed to connect to Ollama API at {}:{} - Error: {}", 
-                LLM_Config.Host, LLM_Config.Port, ec.message());
-            return "Error: Cannot connect to Ollama. Please check if Ollama is running.";
+            responsePromise.set_value("Error: " + std::string(e.what()));
         }
-        LOG_INFO("module.llm_chat", "Successfully connected to Ollama API");
+    });
 
-        // Set up an HTTP POST request message
-        http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
-        req.set(http::field::host, LLM_Config.Host);
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/json");
-        req.body() = jsonPayload;
-        req.prepare_payload();
+    // Detach the thread to let it run independently
+    apiThread.detach();
 
-        // Send the HTTP request
-        http::write(stream, req, ec);
-        if (ec)
-        {
-            LOG_ERROR("module.llm_chat", "Failed to send request to Ollama - Error: {}", ec.message());
-            return "Error: Failed to send request to Ollama";
-        }
-        LOG_INFO("module.llm_chat", "Successfully sent request to Ollama");
-
-        // This buffer is used for reading
-        beast::flat_buffer buffer;
-
-        // Declare a container to hold the response
-        http::response<http::string_body> res;
-
-        // Receive the HTTP response
-        http::read(stream, buffer, res, ec);
-        if (ec)
-        {
-            LOG_ERROR("module.llm_chat", "Failed to read response from Ollama - Error: {}", ec.message());
-            return "Error: Failed to get response from Ollama";
-        }
-
-        // Gracefully close the socket
-        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-
-        if (res.result() != http::status::ok)
-        {
-            LOG_ERROR("module.llm_chat", "HTTP error {} from Ollama: {}", 
-                static_cast<int>(res.result()), res.body());
-            return "Error: Ollama service error - " + std::to_string(static_cast<int>(res.result()));
-        }
-
-        std::string response = ParseLLMResponse(res.body());
-        LOG_INFO("module.llm_chat", "Successfully received response from Ollama: {}", response);
-        
-        return response;
-    }
-    catch (const boost::system::system_error& e)
+    // Wait for the response with a timeout
+    if (responseFuture.wait_for(std::chrono::seconds(LLM_Config.QueueTimeout)) == std::future_status::timeout)
     {
-        LOG_ERROR("module.llm_chat", "Network error connecting to Ollama: {}", e.what());
-        return "Error: Cannot connect to Ollama - " + std::string(e.what());
+        return "Error: Request timed out";
     }
-    catch (const std::exception& e)
-    {
-        LOG_ERROR("module.llm_chat", "Error communicating with Ollama: {}", e.what());
-        return "Error: Ollama service error - " + std::string(e.what());
-    }
+
+    return responseFuture.get();
 }
 
 // Move these class definitions before SendAIResponse
@@ -647,9 +671,115 @@ public:
     }
 };
 
-// Add after the QueryLLM function
-void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team)
-{
+// Add before SendAIResponse function
+bool IsOnCooldown(Player* bot) {
+    if (!bot) return true;
+
+    uint32 currentTime = getMSTime();
+
+    // Check global cooldown
+    if (currentTime - lastGlobalResponse < (LLM_Config.GlobalCooldown * 1000))
+        return true;
+
+    // Check individual bot cooldown
+    auto it = botCooldowns.find(bot->GetGUID());
+    if (it != botCooldowns.end()) {
+        if (currentTime - it->second < (LLM_Config.ResponseCooldown * 1000))
+            return true;
+    }
+
+    return false;
+}
+
+void UpdateCooldowns(Player* bot) {
+    if (!bot) return;
+    uint32 currentTime = getMSTime();
+    botCooldowns[bot->GetGUID()] = currentTime;
+    lastGlobalResponse = currentTime;
+}
+
+// Modify ProcessResponseQueue to limit concurrent processing
+void ProcessResponseQueue() {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    uint32 currentTime = getMSTime();
+
+    // Don't process if we have too many active threads
+    if (activeThreads >= MAX_CONCURRENT_THREADS) {
+        LOG_DEBUG("module.llm_chat", "Max concurrent threads reached ({}), waiting...", 
+            MAX_CONCURRENT_THREADS);
+        return;
+    }
+
+    if (responseQueue.empty()) {
+        return;
+    }
+
+    // Only process the front of the queue
+    QueuedResponse& queuedResponse = responseQueue.front();
+        
+    // Check if response has timed out
+    if (currentTime - queuedResponse.timestamp > (LLM_Config.QueueTimeout * 1000)) {
+        LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
+            queuedResponse.sender->GetName(), LLM_Config.QueueTimeout);
+        responseQueue.pop();
+        return;
+    }
+
+    // Get next responder
+    if (queuedResponse.responsesGenerated >= queuedResponse.maxResponses || 
+        queuedResponse.responsesGenerated >= queuedResponse.responders.size()) {
+        responseQueue.pop();
+        return;
+    }
+
+    Player* currentResponder = queuedResponse.responders[queuedResponse.responsesGenerated];
+    
+    // Increment active threads before starting new one
+    activeThreads++;
+    
+    // Process the response for this bot in a separate thread
+    std::thread([&queuedResponse, currentResponder, this]() {
+        std::string response = QueryLLM(queuedResponse.message, queuedResponse.sender->GetName());
+        
+        if (!response.empty()) {
+            // Add the response prefix if configured
+            if (!LLM_Config.ResponsePrefix.empty()) {
+                response = LLM_Config.ResponsePrefix + response;
+            }
+
+            // Schedule the response with increasing delay based on response number
+            uint32 baseDelay = 2000;  // 2 seconds base delay
+            uint32 delay = baseDelay + (queuedResponse.responsesGenerated * 1500);  // Add 1.5s per previous response
+            
+            BotResponseEvent* event = new BotResponseEvent(
+                currentResponder, 
+                queuedResponse.sender, 
+                response, 
+                queuedResponse.chatType, 
+                queuedResponse.message, 
+                queuedResponse.team
+            );
+
+            // Use a lambda to safely add the event from this thread
+            sWorld->AddDelayedEvent(delay, [event]() {
+                event->Execute(0, 0);
+                delete event;
+            });
+        }
+
+        // Increment the responses generated count
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            queuedResponse.responsesGenerated++;
+        }
+
+        // Decrement active threads when done
+        activeThreads--;
+    }).detach();
+}
+
+// Modify SendAIResponse to be more selective
+void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team) {
     if (!sender || !sender->IsInWorld())
         return;
 
@@ -657,24 +787,29 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     if (!map)
         return;
 
-    // Create a conversation key
-    std::string conversationKey = sender->GetName() + "_" + msg;
-    
-    // Check if we've reached the maximum rounds for this conversation
-    if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
-    {
-        std::string logMsg = "Maximum conversation rounds reached for " + sender->GetName();
-        LOG_INFO("module.llm_chat", "{}", logMsg);
-        return;
+    // Add rate limiting per player
+    static std::map<ObjectGuid, uint32> playerLastMessage;
+    uint32 currentTime = getMSTime();
+    uint32 playerCooldown = 5000;  // 5 seconds between messages per player
+
+    if (playerLastMessage.count(sender->GetGUID()) > 0) {
+        if (currentTime - playerLastMessage[sender->GetGUID()] < playerCooldown) {
+            return;  // Skip if player is sending messages too quickly
+        }
     }
-    
-    // Increment the conversation round counter
-    conversationRounds[conversationKey]++;
+    playerLastMessage[sender->GetGUID()] = currentTime;
 
-    std::string logMsg = "Player " + sender->GetName() + " says: " + msg;
-    LOG_INFO("module.llm_chat", "{}", logMsg);
+    // Check queue size first
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        if (responseQueue.size() >= LLM_Config.MaxQueueSize) {
+            LOG_DEBUG("module.llm_chat", "Response queue full, skipping response for {}", 
+                sender->GetName());
+            return;
+        }
+    }
 
-    // Get all eligible bots
+    // Get all eligible bots that aren't on cooldown
     std::vector<Player*> eligibleBots;
     float maxDistance = (chatType == CHAT_MSG_YELL) ? 300.0f : LLM_Config.ChatRange;
 
@@ -682,85 +817,49 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         if (!player || !player->IsInWorld() || player == sender)
             return;
 
-        // Skip if it's not a bot
-        if (!player->GetSession() || !player->GetSession()->IsBot())
+        // Skip if it's not a bot or if it's on cooldown
+        if (!player->GetSession() || !player->GetSession()->IsBot() || IsOnCooldown(player))
             return;
 
-        // Skip if player is too far for say/yell
-        if ((chatType == CHAT_MSG_SAY || chatType == CHAT_MSG_YELL) && 
-            sender->GetDistance(player) > maxDistance)
-            return;
-
-        // For party chat, check if in same group
-        if ((chatType == CHAT_MSG_PARTY || chatType == CHAT_MSG_PARTY_LEADER) &&
-            (!sender->GetGroup() || !sender->GetGroup()->IsMember(player->GetGUID())))
-            return;
-
-        // For guild chat, check if in same guild
-        if (chatType == CHAT_MSG_GUILD &&
-            (!sender->GetGuild() || sender->GetGuild()->GetId() != player->GetGuildId()))
+        // Add distance check
+        if (sender->GetDistance(player) > maxDistance)
             return;
 
         eligibleBots.push_back(player);
     });
 
-    if (eligibleBots.empty())
-    {
-        std::string logMsg = "No eligible bots found to respond to " + sender->GetName();
-        LOG_INFO("module.llm_chat", "{}", logMsg);
+    if (eligibleBots.empty()) {
         return;
     }
 
-    std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
-    LOG_INFO("module.llm_chat", "{}", countMsg);
-
-    // Use proper random shuffle
+    // Randomly select 1-2 bots (reduced from 2-3)
+    uint32 numResponders = std::min(urand(1, 2), static_cast<uint32>(eligibleBots.size()));
+    std::vector<Player*> selectedBots;
+    
+    // Shuffle and take first numResponders
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(eligibleBots.begin(), eligibleBots.end(), g);
-    
-    uint32 numResponders = std::min(LLM_Config.MaxResponsesPerMessage, static_cast<uint32>(eligibleBots.size()));
-    
-    for (uint32 i = 0; i < numResponders; ++i)
+    selectedBots.assign(eligibleBots.begin(), eligibleBots.begin() + numResponders);
+
+    // Add to queue
     {
-        // Apply response chance
-        if (urand(1, 100) > LLM_Config.ResponseChance)
-        {
-            std::string skipMsg = "Bot " + eligibleBots[i]->GetName() + " skipped response due to chance";
-            LOG_INFO("module.llm_chat", "{}", skipMsg);
-            continue;
-        }
+        std::lock_guard<std::mutex> lock(queueMutex);
+        responseQueue.push({
+            getMSTime(),
+            sender,
+            selectedBots,
+            msg,
+            chatType,
+            team,
+            0,              // No responses generated yet
+            numResponders   // Total responses we want
+        });
+    }
 
-        Player* respondingBot = eligibleBots[i];
-        
-        // Get AI response
-        std::string response = QueryLLM(msg, sender->GetName());
-        if (response.empty())
-        {
-            std::string emptyMsg = "Bot " + respondingBot->GetName() + " got empty response from LLM";
-            LOG_INFO("module.llm_chat", "{}", emptyMsg);
-            continue;
-        }
-
-        // Add the response prefix if configured
-        if (!LLM_Config.ResponsePrefix.empty())
-        {
-            response = LLM_Config.ResponsePrefix + response;
-        }
-
-        std::string responseMsg = "Bot " + respondingBot->GetName() + " responds to " + 
-            sender->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "{}", responseMsg);
-
-        // Add a random delay between 1-3 seconds, increasing with each responder
-        uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
-        std::string delayMsg = "Scheduling response from " + respondingBot->GetName() + 
-            " with " + std::to_string(delay) + "ms delay";
-        LOG_INFO("module.llm_chat", "{}", delayMsg);
-
-        // Schedule the response
-        BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
-        respondingBot->m_Events.AddEvent(event, respondingBot->m_Events.CalculateTime(delay));
+    // Update cooldowns for all selected bots
+    for (Player* bot : selectedBots) {
+        UpdateCooldowns(bot);
     }
 }
 
@@ -816,9 +915,13 @@ public:
         LLM_Config.LogLevel = sConfigMgr->GetOption<int32>("LLMChat.LogLevel", 3);
         
         // New configuration options
-        LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 2);
-        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 3);
-        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 50);
+        LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 1);
+        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 2);
+        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 30);
+        LLM_Config.ResponseCooldown = sConfigMgr->GetOption<uint32>("LLMChat.ResponseCooldown", 10);
+        LLM_Config.GlobalCooldown = sConfigMgr->GetOption<uint32>("LLMChat.GlobalCooldown", 3);
+        LLM_Config.MaxQueueSize = sConfigMgr->GetOption<uint32>("LLMChat.MaxQueueSize", 10);
+        LLM_Config.QueueTimeout = sConfigMgr->GetOption<uint32>("LLMChat.QueueTimeout", 10); // seconds
 
         // Parse the endpoint URL
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
@@ -851,6 +954,45 @@ public:
         LOG_INFO("module.llm_chat", "NumPredict: {}", LLM_Config.NumPredict);
         LOG_INFO("module.llm_chat", "ContextSize: {}", LLM_Config.ContextSize);
         LOG_INFO("module.llm_chat", "RepeatPenalty: {:.2f}", LLM_Config.RepeatPenalty);
+        LOG_INFO("module.llm_chat", "Max Queue Size: {}", LLM_Config.MaxQueueSize);
+        LOG_INFO("module.llm_chat", "Queue Timeout: {} seconds", LLM_Config.QueueTimeout);
+        LOG_INFO("module.llm_chat", "=== Personality System ===");
+        
+        // Log emotion types
+        LOG_INFO("module.llm_chat", "Available Emotions:");
+        for (const auto& [emotion, data] : g_emotion_types.items()) {
+            LOG_INFO("module.llm_chat", "  {} - Intensity: {}", 
+                emotion, data.value("intensity", "normal"));
+        }
+
+        // Log personalities
+        LOG_INFO("module.llm_chat", "Loaded Personalities ({}):", g_personalities.size());
+        for (const auto& personality : g_personalities) {
+            LOG_INFO("module.llm_chat", "  === {} ({}) ===", personality.name, personality.id);
+            LOG_INFO("module.llm_chat", "    Emotions: {}", 
+                Acore::StringFormat("%s", Acore::StringJoin(personality.emotions, ", ").c_str()));
+            
+            // Log traits
+            LOG_INFO("module.llm_chat", "    Traits:");
+            for (const auto& [trait, value] : personality.traits.items()) {
+                LOG_INFO("module.llm_chat", "      {}: {}", trait, value.get<std::string>());
+            }
+            
+            // Log interests
+            LOG_INFO("module.llm_chat", "    Interests: {}", 
+                Acore::StringFormat("%s", Acore::StringJoin(personality.interests, ", ").c_str()));
+            
+            // Log chat style
+            LOG_INFO("module.llm_chat", "    Chat Style:");
+            for (const auto& [style, value] : personality.chat_style.items()) {
+                if (value.is_boolean()) {
+                    LOG_INFO("module.llm_chat", "      {}: {}", style, value.get<bool>() ? "yes" : "no");
+                } else {
+                    LOG_INFO("module.llm_chat", "      {}: {}", style, value.get<std::string>());
+                }
+            }
+        }
+        
         LOG_INFO("module.llm_chat", "=== End Configuration ===");
 
         // Load personalities
@@ -932,12 +1074,16 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = "Player " + player->GetName() + " says: " + msg;
+        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in %s: %s", 
+            player->GetName().c_str(),
+            GetChatTypeString(type).c_str(),
+            msg.c_str());
         LOG_INFO("module.llm_chat", "{}", logMsg);
 
         // Add a small delay before processing
         uint32 delay = urand(100, 500);
-        LOG_INFO("module.llm_chat", "Adding AI response event with delay: {} ms", delay);
+        LOG_INFO("module.llm_chat", "[System] Adding AI response event for %s with %ums delay", 
+            GetChatTypeString(type).c_str(), delay);
 
         // Create and add the event
         player->m_Events.AddEvent(new TriggerResponseEvent(player, msg, type), 
@@ -953,7 +1099,10 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = "Player " + player->GetName() + " says in channel: " + msg;
+        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in channel '%s': %s", 
+            player->GetName().c_str(),
+            channel->GetName().c_str(),
+            msg.c_str());
         LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
@@ -968,7 +1117,9 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = "Player " + player->GetName() + " says in group: " + msg;
+        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in group: %s", 
+            player->GetName().c_str(),
+            msg.c_str());
         LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
@@ -983,7 +1134,10 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = "Player " + player->GetName() + " says in guild: " + msg;
+        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in guild '%s': %s", 
+            player->GetName().c_str(),
+            guild->GetName().c_str(),
+            msg.c_str());
         LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
@@ -998,6 +1152,17 @@ public:
         std::string personalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "mod_llm_chat/conf/personalities.json");
         if (!LoadPersonalities(personalityFile)) {
             LOG_ERROR("module.llm_chat", "Failed to load personalities!");
+        }
+    }
+
+    void OnUpdate(uint32 diff) override {
+        static uint32 updateTimer = 0;
+        updateTimer += diff;
+
+        // Process queue every second
+        if (updateTimer >= 1000) {
+            ProcessResponseQueue();
+            updateTimer = 0;
         }
     }
 };
