@@ -16,7 +16,7 @@ This module enables AI chat interactions in World of Warcraft using either Ollam
 
 Choose one:
 
-- Ollama with llama3.2 model (3B for CPU, 8B for GPU)
+- Ollama with llama3.2 model (1B for CPU, 8B for GPU)
 - LM Studio with compatible model
 
 ## Installation
@@ -43,7 +43,7 @@ Install Ollama
 
 Start Ollama service `sudo systemctl start ollama`
 
-Pull the Llama2 model `ollama pull llama3.2:3b`
+Pull the Llama2 model `ollama pull llama3.2:1b`
 
 Verify installation `ollama list`
 
@@ -59,7 +59,7 @@ recommend downloading the uncensored model of the 1b model
 
 To switch between models, update your `mod-llm-chat.conf` file:
 
-- For CPU servers: `LLM.Ollama.Model = "llama3.2:3b"`
+- For CPU servers: `LLM.Ollama.Model = "llama3.2:1b"`
 - For GPU servers: `LLM.Ollama.Model = "llama3.2:8b"`
 
 #### Option B: LM Studio
