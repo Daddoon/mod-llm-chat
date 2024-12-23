@@ -1198,7 +1198,7 @@ public:
 
         // Add a small delay before processing
         uint32 delay = urand(100, 500);
-        LOG_INFO("module.llm_chat", "[System] Adding AI response event for {} with %ums delay", 
+        LOG_INFO("module.llm_chat", "[System] Adding AI response event for {} with {}} delay", 
             GetChatTypeString(type).c_str(), delay);
 
         // Create and add the event
