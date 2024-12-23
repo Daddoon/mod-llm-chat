@@ -33,30 +33,31 @@ build-essential \
 cmake \
 git
 
+
 ### 2. Install LLM Provider
 
 #### Option A: Ollama (Recommended)
 
-Install Ollama
-curl https://ollama.ai/install.sh | sh
-Start Ollama service
-sudo systemctl start ollama
-Pull the Llama2 model
-ollama pull llama3.2:3b
-Verify installation
-ollama list
+Install Ollama 
+`curl https://ollama.ai/install.sh | sh`
+
+Start Ollama service `sudo systemctl start ollama`
+
+Pull the Llama2 model `ollama pull llama3.2:3b`
+
+Verify installation `ollama list`
 
 recommend downloading the uncensored model of the 1b model
 
 #Censored Origional Model
 
-ollama pull llama3.2:1b
+`ollama pull llama3.2:1b`
 
 #Uncensored Model
 
-ollama pull socialnetwooky/llama3.2-abliterated:1b_q8
+`ollama pull socialnetwooky/llama3.2-abliterated:1b_q8`
 
-To switch between models, update your `mod_llm_chat.conf` file:
+To switch between models, update your `mod-llm-chat.conf` file:
 
 - For CPU servers: `LLM.Ollama.Model = "llama3.2:3b"`
 - For GPU servers: `LLM.Ollama.Model = "llama3.2:8b"`
@@ -78,20 +79,20 @@ To switch between models, update your `mod_llm_chat.conf` file:
 
    - Verify Ollama/LM Studio is running
 
-   ```bash
-   sudo systemctl status ollama
-   sudo systemctl restart ollama  # if needed
-   ```
+   #bash
+   `sudo systemctl status ollama`
+   `sudo systemctl restart ollama`  # if needed
+ 
 
    - Check endpoints in configuration
    - Verify model is properly installed
 
 2. "Required library not found"
 
-   ```bash
+   #bash
    # Reinstall dependencies
-   sudo apt install -y libcurl4-openssl-dev nlohmann-json3-dev
-   ```
+   `sudo apt install -y libcurl4-openssl-dev nlohmann-json3-dev`
+   
 
 3. No AI Response
    - Check module is enabled in configuration
