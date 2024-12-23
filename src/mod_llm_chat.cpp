@@ -87,14 +87,14 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
     try {
         size_t protocolEnd = endpoint.find("://");
         if (protocolEnd == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid endpoint URL (no protocol): %s", endpoint.c_str()).c_str());
+            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no protocol): {}", endpoint);
             return;
         }
 
         std::string url = endpoint.substr(protocolEnd + 3);
         size_t pathStart = url.find('/');
         if (pathStart == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid endpoint URL (no path): %s", endpoint.c_str()).c_str());
+            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no path): {}", endpoint);
             return;
         }
 
@@ -110,11 +110,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             try {
                 int port = std::stoi(config.Port);
                 if (port <= 0 || port > 65535) {
-                    LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid port number: %s", config.Port.c_str()).c_str());
+                    LOG_ERROR("module.llm_chat", "Invalid port number: {}", config.Port);
                     config.Port = "11434"; // Default to Ollama port
                 }
             } catch (std::exception const& e) {
-                LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Invalid port format: %s", e.what()).c_str());
+                LOG_ERROR("module.llm_chat", "Invalid port format: {}", e.what());
                 config.Port = "11434"; // Default to Ollama port
             }
         } else {
@@ -122,11 +122,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             config.Port = "11434"; // Default to Ollama port
         }
 
-        LOG_INFO("module.llm_chat", "%s", Acore::StringFormat("URL parsed successfully - Host: %s, Port: %s, Target: %s", 
-                config.Host.c_str(), config.Port.c_str(), config.Target.c_str()).c_str());
+        LOG_INFO("module.llm_chat", "URL parsed successfully - Host: {}, Port: {}, Target: {}", 
+                config.Host, config.Port, config.Target);
     }
     catch (std::exception const& e) {
-        LOG_ERROR("module.llm_chat", "%s", Acore::StringFormat("Error parsing URL: %s", e.what()).c_str());
+        LOG_ERROR("module.llm_chat", "Error parsing URL: {}", e.what());
         // Set defaults
         config.Host = "localhost";
         config.Port = "11434";
@@ -137,7 +137,7 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
 std::string ParseLLMResponse(const std::string& rawResponse)
 {
     try {
-        LOG_DEBUG("module.llm_chat", "Parsing raw response: %s", rawResponse.c_str());
+        LOG_DEBUG("module.llm_chat", "Parsing raw response: {}", rawResponse);
         
         auto jsonResponse = json::parse(rawResponse);
         
@@ -145,7 +145,7 @@ std::string ParseLLMResponse(const std::string& rawResponse)
         if (jsonResponse.contains("response"))
         {
             std::string response = jsonResponse["response"].get<std::string>();
-            LOG_DEBUG("module.llm_chat", "Parsed response: %s", response.c_str());
+            LOG_DEBUG("module.llm_chat", "Parsed response: {}", response);
             return response;
         }
         
@@ -153,7 +153,7 @@ std::string ParseLLMResponse(const std::string& rawResponse)
         if (jsonResponse.contains("text"))
         {
             std::string response = jsonResponse["text"].get<std::string>();
-            LOG_DEBUG("module.llm_chat", "Parsed response from text field: %s", response.c_str());
+            LOG_DEBUG("module.llm_chat", "Parsed response from text field: {}", response);
             return response;
         }
 
@@ -162,12 +162,12 @@ std::string ParseLLMResponse(const std::string& rawResponse)
     }
     catch (const json::parse_error& e)
     {
-        LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
+        LOG_ERROR("module.llm_chat", "JSON parse error: {}", e.what());
         return "Error: Failed to parse response";
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("module.llm_chat", "Error parsing response: %s", e.what());
+        LOG_ERROR("module.llm_chat", "Error parsing response: {}", e.what());
         return "Error: Failed to process response";
     }
 }
@@ -350,8 +350,8 @@ std::string DetectEmotion(const std::string& message) {
         }
     }
 
-    LOG_DEBUG("module.llm_chat", "Detected emotion '%s' for message: %s", 
-        dominantEmotion.c_str(), message.c_str());
+    LOG_DEBUG("module.llm_chat", "Detected emotion '{}' for message: {}", 
+        dominantEmotion, message);
     return dominantEmotion;
 }
 
@@ -369,8 +369,8 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         std::string emotion = DetectEmotion(message);
         Personality personality = SelectPersonality(emotion);
         
-        LOG_DEBUG("module.llm_chat", "Detected emotion: %s, Selected personality: %s", 
-                 emotion.c_str(), personality.name.c_str());
+        LOG_DEBUG("module.llm_chat", "Detected emotion: {}, Selected personality: {}", 
+                 emotion, personality.name);
 
         // Create context with selected personality
         std::string contextPrompt = 
@@ -385,7 +385,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
             "- If referring to the player, use their name: " + playerName + "\n\n"
             "Chat naturally with " + playerName + " about: " + message;
 
-        LOG_DEBUG("module.llm_chat", "Context prompt: %s", contextPrompt.c_str());
+        LOG_DEBUG("module.llm_chat", "Context prompt: {}", contextPrompt);
 
         // Prepare request payload with emotion-adjusted parameters
         json requestJson = {
@@ -415,7 +415,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         }
 
         std::string jsonPayload = requestJson.dump();
-        LOG_DEBUG("module.llm_chat", "Request payload: %s", jsonPayload.c_str());
+        LOG_DEBUG("module.llm_chat", "Request payload: {}", jsonPayload);
 
         // Set up the IO context
         net::io_context ioc;
@@ -424,15 +424,15 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-        LOG_INFO("module.llm_chat", "Attempting to connect to %s:%s", LLM_Config.Host.c_str(), LLM_Config.Port.c_str());
+        LOG_INFO("module.llm_chat", "Attempting to connect to {}:{}", LLM_Config.Host, LLM_Config.Port);
 
         // Make the connection
         beast::error_code ec;
         stream.connect(results, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to connect to Ollama API at %s:%s - Error: %s", 
-                LLM_Config.Host.c_str(), LLM_Config.Port.c_str(), ec.message().c_str());
+            LOG_ERROR("module.llm_chat", "Failed to connect to Ollama API at {}:{} - Error: {}", 
+                LLM_Config.Host, LLM_Config.Port, ec.message());
             return "Error: Cannot connect to Ollama. Please check if Ollama is running.";
         }
         LOG_INFO("module.llm_chat", "Successfully connected to Ollama API");
@@ -449,7 +449,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         http::write(stream, req, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to send request to Ollama - Error: %s", ec.message().c_str());
+            LOG_ERROR("module.llm_chat", "Failed to send request to Ollama - Error: {}", ec.message());
             return "Error: Failed to send request to Ollama";
         }
         LOG_INFO("module.llm_chat", "Successfully sent request to Ollama");
@@ -464,7 +464,7 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
         http::read(stream, buffer, res, ec);
         if (ec)
         {
-            LOG_ERROR("module.llm_chat", "Failed to read response from Ollama - Error: %s", ec.message().c_str());
+            LOG_ERROR("module.llm_chat", "Failed to read response from Ollama - Error: {}", ec.message());
             return "Error: Failed to get response from Ollama";
         }
 
@@ -473,24 +473,24 @@ std::string QueryLLM(std::string const& message, const std::string& playerName)
 
         if (res.result() != http::status::ok)
         {
-            LOG_ERROR("module.llm_chat", "HTTP error %d from Ollama: %s", 
-                static_cast<int>(res.result()), res.body().c_str());
+            LOG_ERROR("module.llm_chat", "HTTP error {} from Ollama: {}", 
+                static_cast<int>(res.result()), res.body());
             return "Error: Ollama service error - " + std::to_string(static_cast<int>(res.result()));
         }
 
         std::string response = ParseLLMResponse(res.body());
-        LOG_INFO("module.llm_chat", "Successfully received response from Ollama: %s", response.c_str());
+        LOG_INFO("module.llm_chat", "Successfully received response from Ollama: {}", response);
         
         return response;
     }
     catch (const boost::system::system_error& e)
     {
-        LOG_ERROR("module.llm_chat", "Network error connecting to Ollama: %s", e.what());
+        LOG_ERROR("module.llm_chat", "Network error connecting to Ollama: {}", e.what());
         return "Error: Cannot connect to Ollama - " + std::string(e.what());
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("module.llm_chat", "Error communicating with Ollama: %s", e.what());
+        LOG_ERROR("module.llm_chat", "Error communicating with Ollama: {}", e.what());
         return "Error: Ollama service error - " + std::string(e.what());
     }
 }
@@ -542,7 +542,7 @@ public:
         }
 
         std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
 
         // Check if the bot has a session
         if (WorldSession* session = responder->GetSession())
@@ -621,7 +621,7 @@ public:
         }
 
         std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
-        LOG_INFO("module.llm_chat", "%s", deliveredMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", deliveredMsg);
         return true;
     }
 };
@@ -664,7 +664,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     if (conversationRounds[conversationKey] >= LLM_Config.MaxConversationRounds)
     {
         std::string logMsg = "Maximum conversation rounds reached for " + sender->GetName();
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
         return;
     }
     
@@ -672,7 +672,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     conversationRounds[conversationKey]++;
 
     std::string logMsg = "Player " + sender->GetName() + " says: " + msg;
-    LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+    LOG_INFO("module.llm_chat", "{}", logMsg);
 
     // Get all eligible bots
     std::vector<Player*> eligibleBots;
@@ -707,12 +707,12 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
     if (eligibleBots.empty())
     {
         std::string logMsg = "No eligible bots found to respond to " + sender->GetName();
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
         return;
     }
 
     std::string countMsg = "Found " + std::to_string(eligibleBots.size()) + " eligible bots to respond";
-    LOG_INFO("module.llm_chat", "%s", countMsg.c_str());
+    LOG_INFO("module.llm_chat", "{}", countMsg);
 
     // Use proper random shuffle
     std::random_device rd;
@@ -727,7 +727,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         if (urand(1, 100) > LLM_Config.ResponseChance)
         {
             std::string skipMsg = "Bot " + eligibleBots[i]->GetName() + " skipped response due to chance";
-            LOG_INFO("module.llm_chat", "%s", skipMsg.c_str());
+            LOG_INFO("module.llm_chat", "{}", skipMsg);
             continue;
         }
 
@@ -738,7 +738,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         if (response.empty())
         {
             std::string emptyMsg = "Bot " + respondingBot->GetName() + " got empty response from LLM";
-            LOG_INFO("module.llm_chat", "%s", emptyMsg.c_str());
+            LOG_INFO("module.llm_chat", "{}", emptyMsg);
             continue;
         }
 
@@ -750,13 +750,13 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
 
         std::string responseMsg = "Bot " + respondingBot->GetName() + " responds to " + 
             sender->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", responseMsg);
 
         // Add a random delay between 1-3 seconds, increasing with each responder
         uint32 delay = urand(1000 * (i + 1), 3000 * (i + 1));
         std::string delayMsg = "Scheduling response from " + respondingBot->GetName() + 
             " with " + std::to_string(delay) + "ms delay";
-        LOG_INFO("module.llm_chat", "%s", delayMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", delayMsg);
 
         // Schedule the response
         BotResponseEvent* event = new BotResponseEvent(respondingBot, sender, response, chatType, msg, team);
@@ -768,7 +768,7 @@ class LLMChatLogger {
 public:
     static void Log(int32 level, std::string const& message) {
         if (LLM_Config.LogLevel >= level) {
-            LOG_INFO("module.llm_chat", "%s", message.c_str());
+            LOG_INFO("module.llm_chat", "{}", message);
         }
     }
 
@@ -776,8 +776,8 @@ public:
         if (LLM_Config.LogLevel >= 2) {
             std::string inputMsg = "Player " + playerName + " says: " + input;
             std::string responseMsg = "AI Response: " + response;
-            LOG_INFO("module.llm_chat", "%s", inputMsg.c_str());
-            LOG_INFO("module.llm_chat", "%s", responseMsg.c_str());
+            LOG_INFO("module.llm_chat", "{}", inputMsg);
+            LOG_INFO("module.llm_chat", "{}", responseMsg);
         }
     }
 };
@@ -833,24 +833,24 @@ public:
 
         // Log the loaded configuration
         LOG_INFO("module.llm_chat", "=== LLM Chat Configuration ===");
-        LOG_INFO("module.llm_chat", "Enabled: %s", LLM_Config.Enabled ? "true" : "false");
-        LOG_INFO("module.llm_chat", "Provider: %d", LLM_Config.Provider);
-        LOG_INFO("module.llm_chat", "Endpoint: %s", LLM_Config.OllamaEndpoint.c_str());
-        LOG_INFO("module.llm_chat", "Model: %s", LLM_Config.OllamaModel.c_str());
-        LOG_INFO("module.llm_chat", "Host: %s", LLM_Config.Host.c_str());
-        LOG_INFO("module.llm_chat", "Port: %s", LLM_Config.Port.c_str());
-        LOG_INFO("module.llm_chat", "Target: %s", LLM_Config.Target.c_str());
-        LOG_INFO("module.llm_chat", "Response Prefix: '%s'", LLM_Config.ResponsePrefix.c_str());
-        LOG_INFO("module.llm_chat", "Chat Range: %.2f", LLM_Config.ChatRange);
-        LOG_INFO("module.llm_chat", "Log Level: %d", LLM_Config.LogLevel);
-        LOG_INFO("module.llm_chat", "Max Responses Per Message: %u", LLM_Config.MaxResponsesPerMessage);
-        LOG_INFO("module.llm_chat", "Max Conversation Rounds: %u", LLM_Config.MaxConversationRounds);
-        LOG_INFO("module.llm_chat", "Response Chance: %u%%", LLM_Config.ResponseChance);
-        LOG_INFO("module.llm_chat", "Temperature: %.2f", LLM_Config.Temperature);
-        LOG_INFO("module.llm_chat", "TopP: %.2f", LLM_Config.TopP);
-        LOG_INFO("module.llm_chat", "NumPredict: %u", LLM_Config.NumPredict);
-        LOG_INFO("module.llm_chat", "ContextSize: %u", LLM_Config.ContextSize);
-        LOG_INFO("module.llm_chat", "RepeatPenalty: %.2f", LLM_Config.RepeatPenalty);
+        LOG_INFO("module.llm_chat", "Enabled: {}", LLM_Config.Enabled ? "true" : "false");
+        LOG_INFO("module.llm_chat", "Provider: {}", LLM_Config.Provider);
+        LOG_INFO("module.llm_chat", "Endpoint: {}", LLM_Config.OllamaEndpoint);
+        LOG_INFO("module.llm_chat", "Model: {}", LLM_Config.OllamaModel);
+        LOG_INFO("module.llm_chat", "Host: {}", LLM_Config.Host);
+        LOG_INFO("module.llm_chat", "Port: {}", LLM_Config.Port);
+        LOG_INFO("module.llm_chat", "Target: {}", LLM_Config.Target);
+        LOG_INFO("module.llm_chat", "Response Prefix: '{}'", LLM_Config.ResponsePrefix);
+        LOG_INFO("module.llm_chat", "Chat Range: {:.2f}", LLM_Config.ChatRange);
+        LOG_INFO("module.llm_chat", "Log Level: {}", LLM_Config.LogLevel);
+        LOG_INFO("module.llm_chat", "Max Responses Per Message: {}", LLM_Config.MaxResponsesPerMessage);
+        LOG_INFO("module.llm_chat", "Max Conversation Rounds: {}", LLM_Config.MaxConversationRounds);
+        LOG_INFO("module.llm_chat", "Response Chance: {}%", LLM_Config.ResponseChance);
+        LOG_INFO("module.llm_chat", "Temperature: {:.2f}", LLM_Config.Temperature);
+        LOG_INFO("module.llm_chat", "TopP: {:.2f}", LLM_Config.TopP);
+        LOG_INFO("module.llm_chat", "NumPredict: {}", LLM_Config.NumPredict);
+        LOG_INFO("module.llm_chat", "ContextSize: {}", LLM_Config.ContextSize);
+        LOG_INFO("module.llm_chat", "RepeatPenalty: {:.2f}", LLM_Config.RepeatPenalty);
         LOG_INFO("module.llm_chat", "=== End Configuration ===");
 
         // Load personalities
@@ -933,11 +933,11 @@ public:
             return;
 
         std::string logMsg = "Player " + player->GetName() + " says: " + msg;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
 
         // Add a small delay before processing
         uint32 delay = urand(100, 500);
-        LOG_INFO("module.llm_chat", "Adding AI response event with delay: %u ms", delay);
+        LOG_INFO("module.llm_chat", "Adding AI response event with delay: {} ms", delay);
 
         // Create and add the event
         player->m_Events.AddEvent(new TriggerResponseEvent(player, msg, type), 
@@ -954,7 +954,7 @@ public:
             return;
 
         std::string logMsg = "Player " + player->GetName() + " says in channel: " + msg;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
@@ -969,7 +969,7 @@ public:
             return;
 
         std::string logMsg = "Player " + player->GetName() + " says in group: " + msg;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
@@ -984,7 +984,7 @@ public:
             return;
 
         std::string logMsg = "Player " + player->GetName() + " says in guild: " + msg;
-        LOG_INFO("module.llm_chat", "%s", logMsg.c_str());
+        LOG_INFO("module.llm_chat", "{}", logMsg);
 
         SendAIResponse(player, msg, type, player->GetTeamId());
     }
