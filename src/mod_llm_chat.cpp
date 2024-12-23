@@ -111,6 +111,14 @@ uint32 const RESPONSE_TIMEOUT = 10000; // 10 seconds timeout
 // Add to the global variables section
 std::atomic<uint32> activeThreads(0);
 const uint32 MAX_CONCURRENT_THREADS = 2;  // Maximum concurrent LLM requests
+
+// Add to global variables
+struct GlobalRateLimit {
+    uint32 lastMessageTime{0};
+    uint32 messageCount{0};
+    static const uint32 WINDOW_SIZE = 10000;  // 10 seconds window
+    static const uint32 MAX_MESSAGES = 5;     // Max 5 messages per window
+} globalRateLimit;
 }
 
 // Helper function to parse URL
@@ -778,32 +786,82 @@ void ProcessResponseQueue() {
     }).detach();
 }
 
-// Modify SendAIResponse to be more selective
+// Add to SendAIResponse before processing
+bool CanProcessMessage(Player* sender) {
+    if (!sender)
+        return false;
+
+    uint32 currentTime = getMSTime();
+
+    // Global rate limiting
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        
+        // Reset counter if window has passed
+        if (currentTime - globalRateLimit.lastMessageTime > GlobalRateLimit::WINDOW_SIZE) {
+            globalRateLimit.messageCount = 0;
+            globalRateLimit.lastMessageTime = currentTime;
+        }
+        
+        // Check if we're over the limit
+        if (globalRateLimit.messageCount >= GlobalRateLimit::MAX_MESSAGES) {
+            LOG_DEBUG("module.llm_chat", "Global rate limit reached, skipping message");
+            return false;
+        }
+        
+        globalRateLimit.messageCount++;
+    }
+
+    // Per-player rate limiting
+    static std::map<ObjectGuid, uint32> playerLastMessage;
+    uint32 playerCooldown = 10000;  // Increased to 10 seconds between messages per player
+
+    if (playerLastMessage.count(sender->GetGUID()) > 0) {
+        if (currentTime - playerLastMessage[sender->GetGUID()] < playerCooldown) {
+            LOG_DEBUG("module.llm_chat", "Player cooldown active for {}, skipping message", 
+                sender->GetName());
+            return false;
+        }
+    }
+    playerLastMessage[sender->GetGUID()] = currentTime;
+
+    return true;
+}
+
+// Modify SendAIResponse to use the new rate limiting
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team) {
     if (!sender || !sender->IsInWorld())
+        return;
+
+    // Check rate limits first
+    if (!CanProcessMessage(sender))
         return;
 
     Map* map = sender->GetMap();
     if (!map)
         return;
 
-    // Add rate limiting per player
-    static std::map<ObjectGuid, uint32> playerLastMessage;
-    uint32 currentTime = getMSTime();
-    uint32 playerCooldown = 5000;  // 5 seconds between messages per player
+    // Filter out short or spammy messages
+    if (msg.length() < 5 || msg.length() > 200) {
+        LOG_DEBUG("module.llm_chat", "Message length outside acceptable range, skipping");
+        return;
+    }
 
-    if (playerLastMessage.count(sender->GetGUID()) > 0) {
-        if (currentTime - playerLastMessage[sender->GetGUID()] < playerCooldown) {
-            return;  // Skip if player is sending messages too quickly
+    // Check for message spam/repetition
+    static std::map<ObjectGuid, std::string> lastPlayerMessage;
+    if (lastPlayerMessage.count(sender->GetGUID()) > 0) {
+        if (lastPlayerMessage[sender->GetGUID()] == msg) {
+            LOG_DEBUG("module.llm_chat", "Repeated message from {}, skipping", sender->GetName());
+            return;
         }
     }
-    playerLastMessage[sender->GetGUID()] = currentTime;
+    lastPlayerMessage[sender->GetGUID()] = msg;
 
-    // Check queue size first
+    // Check queue size with increased restrictions
     {
         std::lock_guard<std::mutex> lock(queueMutex);
-        if (responseQueue.size() >= LLM_Config.MaxQueueSize) {
-            LOG_DEBUG("module.llm_chat", "Response queue full, skipping response for {}", 
+        if (responseQueue.size() >= LLM_Config.MaxQueueSize / 2) {  // More restrictive queue limit
+            LOG_DEBUG("module.llm_chat", "Response queue getting full, skipping response for {}", 
                 sender->GetName());
             return;
         }
@@ -916,12 +974,12 @@ public:
         
         // New configuration options
         LLM_Config.MaxResponsesPerMessage = sConfigMgr->GetOption<uint32>("LLMChat.MaxResponsesPerMessage", 1);
-        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 2);
-        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 30);
-        LLM_Config.ResponseCooldown = sConfigMgr->GetOption<uint32>("LLMChat.ResponseCooldown", 10);
-        LLM_Config.GlobalCooldown = sConfigMgr->GetOption<uint32>("LLMChat.GlobalCooldown", 3);
-        LLM_Config.MaxQueueSize = sConfigMgr->GetOption<uint32>("LLMChat.MaxQueueSize", 10);
-        LLM_Config.QueueTimeout = sConfigMgr->GetOption<uint32>("LLMChat.QueueTimeout", 10); // seconds
+        LLM_Config.MaxConversationRounds = sConfigMgr->GetOption<uint32>("LLMChat.MaxConversationRounds", 1);
+        LLM_Config.ResponseChance = sConfigMgr->GetOption<uint32>("LLMChat.ResponseChance", 20);
+        LLM_Config.ResponseCooldown = sConfigMgr->GetOption<uint32>("LLMChat.ResponseCooldown", 15);
+        LLM_Config.GlobalCooldown = sConfigMgr->GetOption<uint32>("LLMChat.GlobalCooldown", 5);
+        LLM_Config.MaxQueueSize = sConfigMgr->GetOption<uint32>("LLMChat.MaxQueueSize", 5);
+        LLM_Config.QueueTimeout = sConfigMgr->GetOption<uint32>("LLMChat.QueueTimeout", 5); // seconds
 
         // Parse the endpoint URL
         ParseEndpointURL(LLM_Config.OllamaEndpoint, LLM_Config);
