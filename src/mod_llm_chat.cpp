@@ -1190,7 +1190,7 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in %s: %s", 
+        std::string logMsg = Acore::StringFormat("[Chat] Player '{}' says in {}: {}", 
             player->GetName().c_str(),
             GetChatTypeString(type).c_str(),
             msg.c_str());
@@ -1198,7 +1198,7 @@ public:
 
         // Add a small delay before processing
         uint32 delay = urand(100, 500);
-        LOG_INFO("module.llm_chat", "[System] Adding AI response event for %s with %ums delay", 
+        LOG_INFO("module.llm_chat", "[System] Adding AI response event for {} with %ums delay", 
             GetChatTypeString(type).c_str(), delay);
 
         // Create and add the event
@@ -1215,7 +1215,7 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in channel '%s': %s", 
+        std::string logMsg = Acore::StringFormat("[Chat] Player '{}' says in channel '{}': {}", 
             player->GetName().c_str(),
             channel->GetName().c_str(),
             msg.c_str());
@@ -1233,7 +1233,7 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in group: %s", 
+        std::string logMsg = Acore::StringFormat("[Chat] Player '{}' says in group: {}", 
             player->GetName().c_str(),
             msg.c_str());
         LOG_INFO("module.llm_chat", "{}", logMsg);
@@ -1250,7 +1250,7 @@ public:
         if (!LLM_Config.ResponsePrefix.empty() && msg.find(LLM_Config.ResponsePrefix) == 0)
             return;
 
-        std::string logMsg = Acore::StringFormat("[Chat] Player '%s' says in guild '%s': %s", 
+        std::string logMsg = Acore::StringFormat("[Chat] Player '{}' says in guild '{}': {}", 
             player->GetName().c_str(),
             guild->GetName().c_str(),
             msg.c_str());
