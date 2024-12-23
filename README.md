@@ -99,6 +99,24 @@ To switch between models, update your `mod-llm-chat.conf` file:
    - Verify chat range setting
    - Check server logs for errors
 
+
+4. Running Ollama from another machine, Container or Virtual machine
+   - Make Ollama Accessible from other machines, Add an override config to enable the service 
+   - `nano /etc/systemd/system/ollama.service.d/override.conf`
+
+   paste the Contents then press CTL + X then Y to save the changes These should be on seperate lines 
+
+`[Service]`
+
+`Environment="OLLAMA_HOST=0.0.0.0"`
+
+- Stop ollama `systemctl stop ollama` 
+- reload the daemon `systemctl daemon-reload`
+- Restart Ollama `systemctl stop ollama`
+- Test the connection (On your linux terminal type `ip addr` or `ip a`) 
+- on another local machine try to access ollama via the ip and port `http://192.168.0.75:11434` (Use Your IP Address not my example one) if everything is up and running correctly it should display `Ollama is running` on the webpage
+
+
 ### Logs
 
 Check the following for error messages:
