@@ -1,134 +1,358 @@
-[worldserver]
-
+# LLM Chat Module Configuration
 ###################################################################################################
-# LLM CHAT SYSTEM
+#
+# SECTION 1: Core Settings
 ###################################################################################################
 
+#
 #    LLMChat.Enable
-#        Description: Enable the LLM Chat module
-#        Default:     1  - (Enabled)
-#                     0  - (Disabled)
+#        Description: Enable or disable the LLM Chat module
+#        Default:     1 - Enabled
+#        Note:        Make sure Ollama service is running before enabling
+#
 
 LLMChat.Enable = 1
 
-#    LLMChat.Announce
-#        Description: Announce the module on player login
-#        Default:     0  - (Disabled to maintain immersion)
-#                     1  - (Enabled)
-
-LLMChat.Announce = 1
-
-#    LLMChat.Provider
-#        Description: Which LLM provider to use
-#        Default:     1  - (Ollama)
-#                     2  - (LM Studio)
-
-LLMChat.Provider = 1
-
-#    LLMChat.Ollama.Endpoint
-#        Description: Endpoint URL for Ollama API
-#        Default:    "http://localhost:11434/api/generate"
-
-LLMChat.Ollama.Endpoint = "http://localhost:11434/api/generate"
-
-#    LLMChat.Ollama.Model
-#        Description: Model to use with Ollama
-#        Default:    "krith/meta-llama-3.2-1b-instruct-uncensored:IQ3_M"
-
-LLMChat.Ollama.Model = "krith/meta-llama-3.2-1b-instruct-uncensored:IQ3_M"
-
-#    LLMChat.ChatRange
-#        Description: Range in yards for chat responses to be visible
-#        Default:     25.0
-
-LLMChat.ChatRange = 25.0
-
-#    LLMChat.ResponsePrefix
-#        Description: Prefix for responses (empty for natural chat)
-#        Default:    ""  - (No prefix for natural chat)
-#                    "[AI] "  - (Example prefix)
-
-LLMChat.ResponsePrefix = ""
-
+#
 #    LLMChat.LogLevel
-#        Description: Level of logging detail
-#        Default:     3  - (Detailed)
-#                     0  - (Disabled)
-#                     1  - (Errors Only)
-#                     2  - (Basic)
+#        Description: Logging level for the module
+#        Default:     2 - Detailed logging
+#        Values:      0 = Disabled (no logging)
+#                    1 = Minimal (errors only)
+#                    2 = Detailed (errors + events + chat interactions)
+#                    3 = Debug (all above + technical details)
+#        Note:        Higher levels include all lower level logs (except 0 which disables all logs)
+#
 
 LLMChat.LogLevel = 3
 
+#
+#    LLMChat.Announce
+#        Description: Announce module to players on login
+#        Default:     0 - Disabled
+#
+
+LLMChat.Announce = 1
+
+###################################################################################################
+# SECTION 2: LLM Provider Settings
+###################################################################################################
+
+#
+#    LLMChat.Endpoint
+#        Description: API endpoint URL for the LLM service
+#        Default:     "http://localhost:11434/api/generate"
+#        Note:        For Ollama, use the default. For other providers, use their API endpoint.
+#
+#        Available Endpoints (commented examples):
+#
+#        Local Deployments (Free):
+#            - "http://localhost:11434/api/generate"    (Ollama - Default)
+#                Website: https://ollama.ai
+#                Note: Free, self-hosted, runs locally
+#
+#            - "http://localhost:1234/v1/chat/completions"    (LM Studio)
+#                Website: https://lmstudio.ai
+#                Note: Free, self-hosted local GUI for running models
+#
+#            - "http://localhost:8080/v1/completions"    (Text Generation WebUI)
+#                Website: https://github.com/oobabooga/text-generation-webui
+#                Note: Free, self-hosted web interface
+#
+#        Cloud Providers (Paid with Free Tiers):
+#            - "https://api.openai.com/v1/chat/completions"    (OpenAI)
+#                Website: https://openai.com
+#                Pricing: Varies by model ($0.0005-$0.03/1K tokens)
+#                Free Tier: $5 credit for new accounts
+#                Note: Requires API key
+#
+#            - "https://api.anthropic.com/v1/messages"    (Anthropic)
+#                Website: https://anthropic.com
+#                Pricing: Varies by model ($0.0005-$0.15/1K tokens)
+#                Free Tier: Limited free credits for new users
+#                Note: Requires API key
+#
+#            - "https://api.together.xyz/inference"    (Together AI)
+#                Website: https://www.together.ai
+#                Pricing: Pay-as-you-go ($0.0002-$0.0015/1K tokens)
+#                Free Tier: Yes - $25 in credits, includes most open source models
+#                Note: Large selection of free and paid models
+#
+#            - "https://api.groq.com/openai/v1/chat/completions"    (Groq)
+#                Website: https://groq.com
+#                Pricing: $0.0001-$0.0003/1K tokens
+#                Free Tier: Yes - includes LLaMA2 70B and Mixtral 8x7B models
+#                Note: Known for extremely fast inference speeds (sub-100ms)
+#                      Free access to several open source models
+#                      No credit card required for free tier
+#
+#            - "https://api.deepinfra.com/v1/openai/chat/completions"    (DeepInfra)
+#                Website: https://deepinfra.com
+#                Pricing: Varies by model ($0.0001-$0.001/1K tokens)
+#                Free Tier: Yes - $10 in credits, includes Mixtral and other models
+#                Note: Offers many open source models with free inference
+#
+#            - "https://api.perplexity.ai/chat/completions"    (Perplexity)
+#                Website: https://www.perplexity.ai
+#                Free Tier: Yes - includes pplx-7b-online and pplx-70b-online
+#                Note: 1M tokens per month free
+#                      No credit card required for free tier
+#
+#            - "https://api.fireworks.ai/inference/v1/chat/completions"    (Fireworks)
+#                Website: https://fireworks.ai
+#                Free Tier: Yes - $10 in credits
+#                Note: Access to Mixtral, Llama, and other models
+#                      Competitive pricing for paid usage
+#
+#            - "https://api.mistral.ai/v1/chat/completions"    (Mistral)
+#                Website: https://mistral.ai
+#                Free Tier: Yes - includes mistral-tiny and mistral-small
+#                Pricing: From €0.14/1M tokens
+#                Note: Created by Mistral AI team
+#
+#            - "https://api.anyscale.ai/v1/chat/completions"    (Anyscale)
+#                Website: https://www.anyscale.ai
+#                Free Tier: Yes - includes Llama 2 and Mistral models
+#                Note: 1M tokens per month free
+#                      No credit card required
+#
+#            - "https://api.claude.ai/v1/messages"    (Claude.ai)
+#                Website: https://claude.ai
+#                Free Tier: Yes - web interface only (no API)
+#                Note: Free access to Claude 3 Sonnet
+#                      Available in supported countries
+#
+#        Note: Pricing information is approximate and subject to change
+#              Many providers offer additional free credits for startups/researchers
+#              Some services have usage quotas or rate limits on free tiers
+#              Check provider websites for current offers and availability
+#
+
+LLMChat.Endpoint = "http://localhost:11434/api/generate"
+
+#
+#    LLMChat.Model
+#        Description: Model to use for chat responses
+#        Default:     "socialnetwooky/llama3.2-abliterated:1b_q8"
+#        Note:        For Ollama, run: ollama pull socialnetwooky/llama3.2-abliterated:1b_q8
+#                    For other providers, use their model identifier
+#
+#        Available Models (commented examples):
+#        Ollama Models:
+#            - "socialnetwooky/llama3.2-abliterated:1b_q8" (default, recommended)
+#            - "llama2:7b-chat"      (Larger, more capable)
+#            - "llama2:13b-chat"     (Even larger, better responses)
+#            - "mistral:7b"          (Good alternative to llama2)
+#            - "mixtral:8x7b"        (Very powerful mixture of experts model)
+#            - "neural-chat:7b"      (Optimized for chat)
+#            - "starling-lm:7b"      (Good for roleplay)
+#            - "codellama:7b"        (Code-focused variant)
+#            - "dolphin-phi:2.7b"    (Smaller but capable)
+#            - "phi-2:2.7b"          (Microsoft's small model)
+#
+#        OpenAI Models (requires API key):
+#            - "gpt-3.5-turbo"       (Fast, cost-effective)
+#            - "gpt-4"               (Most capable)
+#            - "gpt-4-turbo-preview" (Latest GPT-4)
+#
+#        Anthropic Models (requires API key):
+#            - "claude-3-opus"       (Most capable)
+#            - "claude-3-sonnet"     (Balanced performance)
+#            - "claude-3-haiku"      (Fast, efficient)
+#            - "claude-2.1"          (Previous generation)
+#
+#        Free/Open Source Models (via various providers):
+#            - "openchat:7b"         (Open source chat model)
+#            - "stable-beluga:7b"    (Stable diffusion team's model)
+#            - "vicuna:7b"           (Berkeley's model)
+#            - "wizardlm:7b"         (Specialized in complex tasks)
+#            - "zephyr:7b"           (Balanced performance)
+#            - "nous-hermes:7b"      (Well-rounded performer)
+#            - "orca-2:13b"          (Microsoft research model)
+#            - "yi:6b"               (Efficient smaller model)
+#
+#        Note: Larger models (13B+) require more system resources
+#              Some models may require specific provider endpoints
+#              Always check licensing and usage requirements
+#
+
+LLMChat.Model = "socialnetwooky/llama3.2-abliterated:1b_q8"
+
+#
+#    LLMChat.ApiKey
+#        Description: API key for authentication (if required)
+#        Default:     ""
+#        Note:        Required for most cloud providers. Leave empty for Ollama.
+#
+
+LLMChat.ApiKey = ""
+
+#
+#    LLMChat.ApiSecret
+#        Description: API secret for authentication (if required)
+#        Default:     ""
+#        Note:        Required for some providers. Leave empty if not needed.
+#
+
+LLMChat.ApiSecret = ""
+
+###################################################################################################
+# SECTION 3: Chat Behavior Settings
+###################################################################################################
+
+#
+#    LLMChat.ChatRange
+#        Description: Maximum range in yards for chat responses
+#        Default:     25.0
+#
+
+LLMChat.ChatRange = 25.0
+
+#
+#    LLMChat.ResponsePrefix
+#        Description: Prefix to add to AI responses (empty for none)
+#        Default:     ""
+#
+
+LLMChat.ResponsePrefix = ""
+
+#
 #    LLMChat.MaxResponsesPerMessage
-#        Description: Maximum number of bots that can respond to a single message
-#        Default:     2  - (Two bots maximum)
-#                     0  - (Disabled)
-#                     1-10  - (Number of responding bots)
+#        Description: Maximum number of AI responses per player message
+#        Default:     1
+#
 
-LLMChat.MaxResponsesPerMessage = 3
+LLMChat.MaxResponsesPerMessage = 1
 
-#    LLMChat.MaxConversationRounds
-#        Description: Maximum number of back-and-forth exchanges in a conversation
-#        Default:     3  - (Three rounds of responses)
-#                     0  - (Disabled)
-#                     1-10  - (Number of conversation rounds)
-
-LLMChat.MaxConversationRounds = 3
-
+#
 #    LLMChat.ResponseChance
-#        Description: Percentage chance (0-100) that an eligible bot will respond
-#        Default:     50  - (50% chance to respond)
-#                     0  - (Never respond)
-#                     100  - (Always respond)
+#        Description: Percentage chance of generating a response (0-100)
+#        Default:     30
+#
 
-LLMChat.ResponseChance = 75
+LLMChat.ResponseChance = 30
 
-#    LLMChat.LLM.Temperature
-#        Description: Controls response creativity (0.1-2.0)
-#        Default:     1.2  - (More creative responses)
-#                     0.1  - (More focused/deterministic)
-#                     2.0  - (Maximum creativity)
+###################################################################################################
+# SECTION 4: Performance & Rate Limiting
+###################################################################################################
 
-LLMChat.LLM.Temperature = 1.5
+#
+#    LLMChat.Performance.GlobalRateLimit
+#        Description: Global rate limiting settings
+#        WindowSize:  Time window in milliseconds (Default: 10000 - 10 seconds)
+#        MaxMessages: Maximum messages per window (Default: 5)
+#
 
-#    LLMChat.LLM.TopP
-#        Description: Controls response diversity (0.1-1.0)
-#        Default:     0.95  - (High diversity)
-#                     0.1   - (More focused)
-#                     1.0   - (Maximum diversity)
+LLMChat.Performance.GlobalRateLimit.WindowSize = 10000
+LLMChat.Performance.GlobalRateLimit.MaxMessages = 5
 
-LLMChat.LLM.TopP = 0.95
+#
+#    LLMChat.Performance.Cooldowns
+#        Description: Cooldown settings
+#        Player:      Time between player triggers (Default: 10000ms - 10 seconds)
+#        Bot:         Time before a bot can respond again (Default: 15000ms - 15 seconds)
+#        Global:      Time before any bot can respond (Default: 5000ms - 5 seconds)
+#
 
-#    LLMChat.LLM.NumPredict
-#        Description: Maximum response length in tokens
-#        Default:     1024  - (Standard length)
-#                     256   - (Short responses)
-#                     2048  - (Long responses)
+LLMChat.Performance.PlayerCooldown = 10000
+LLMChat.Performance.BotCooldown = 15000
+LLMChat.Performance.GlobalCooldown = 5000
 
+#
+#    LLMChat.Performance.Threading
+#        Description: Thread and API call limits
+#        MaxThreads:  Maximum concurrent threads (Default: 2)
+#        MaxApiCalls: Maximum active API calls (Default: 5)
+#        ApiTimeout:  API timeout in seconds (Default: 3)
+#
+
+LLMChat.Performance.MaxConcurrentThreads = 2
+LLMChat.Performance.MaxActiveApiCalls = 5
+LLMChat.Performance.ApiTimeout = 3
+
+#
+#    LLMChat.Performance.MessageLimits
+#        Description: Message length limits
+#        Min:         Minimum characters (Default: 5)
+#        Max:         Maximum characters (Default: 200)
+#
+
+LLMChat.Performance.MinMessageLength = 5
+LLMChat.Performance.MaxMessageLength = 200
+
+#
+#    LLMChat.Performance.Delays
+#        Description: Response timing settings
+#        Min:         Minimum delay in ms (Default: 2000 - 2 seconds)
+#        Max:         Additional random delay in ms (Default: 1500 - Up to 1.5 seconds)
+#        Pacified:    Duration to keep bots pacified after response (Default: 5000ms)
+#
+
+LLMChat.Performance.ResponseDelay.Min = 2000
+LLMChat.Performance.ResponseDelay.Max = 1500
+LLMChat.Performance.BotPacifiedDuration = 5000
+
+###################################################################################################
+# SECTION 5: Queue Settings
+###################################################################################################
+
+#
+#    LLMChat.Queue
+#        Description: Message queue settings
+#        Size:        Maximum queue size (Default: 25)
+#        Timeout:     Time before discarding queued message (Default: 180 seconds)
+#
+
+LLMChat.Queue.Size = 25
+LLMChat.Queue.Timeout = 180
+
+###################################################################################################
+# SECTION 6: LLM Parameters
+###################################################################################################
+
+#
+#    LLMChat.LLM.Parameters
+#        Description: Language model behavior settings
+#        Temperature:    Creativity (0.0-1.0, Default: 0.85)
+#        TopP:          Nucleus sampling (0.0-1.0, Default: 0.9)
+#        NumPredict:    Max tokens to generate (Default: 2048)
+#        ContextSize:   Context window size (Default: 4096)
+#        RepeatPenalty: Repetition penalty (1.0+, Default: 1.2)
+#
+
+LLMChat.LLM.Temperature = 0.85
+LLMChat.LLM.TopP = 0.9
 LLMChat.LLM.NumPredict = 2048
-
-#    LLMChat.LLM.ContextSize
-#        Description: Size of context window in tokens
-#        Default:     4096  - (Standard context)
-#                     2048  - (Smaller context)
-#                     8192  - (Larger context)
-
 LLMChat.LLM.ContextSize = 4096
+LLMChat.LLM.RepeatPenalty = 1.2
 
-#    LLMChat.LLM.RepeatPenalty
-#        Description: Penalty for repeating words (1.0-2.0)
-#        Default:     1.3  - (Higher penalty for more variation)
-#                     1.0  - (No penalty)
-#                     2.0  - (Maximum penalty)
+###################################################################################################
+# SECTION 7: Memory System
+###################################################################################################
 
-LLMChat.LLM.RepeatPenalty = 1.3
+#
+#    LLMChat.Memory
+#        Description: Conversation memory settings
+#        Enable:      Enable memory system (Default: 1)
+#        MaxPair:     Max interactions per pair (Default: 10)
+#        Expiration:  Memory expiration in seconds (Default: 3600 - 1 hour, 0 = never)
+#        Context:     Max context length in characters (Default: 2000)
+#
 
+LLMChat.Memory.Enable = 1
+LLMChat.Memory.MaxInteractionsPerPair = 10
+LLMChat.Memory.ExpirationTime = 3600
+LLMChat.Memory.MaxContextLength = 2000
+
+###################################################################################################
+# SECTION 8: Personality System
+###################################################################################################
+
+#
 #    LLMChat.PersonalityFile
-#        Description: Path to personality definitions JSON file
-#        Default:    "mod_llm_chat/conf/personalities.json"
-#        Contains personality definitions, emotion types, and chat styles
-#        Edit this file to add or modify AI personalities
+#        Description: Path to the personality configuration file
+#        Default:     "mod_llm_chat/conf/personalities.json"
+#
 
 LLMChat.PersonalityFile = "mod_llm_chat/conf/personalities.json"
 
-################################################################################################### 
