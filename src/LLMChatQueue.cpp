@@ -1,228 +1,100 @@
 #include "LLMChatQueue.h"
 #include "LLMChatLogger.h"
-#include "LLMChatMemory.h"
-#include "mod_llm_chat_config.h"
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <nlohmann/json.hpp>
+#include "mod_llm_chat.h"
 
-namespace beast = boost::beast;
-namespace http = beast::http;
-namespace net = boost::asio;
-using tcp = net::ip::tcp;
-using json = nlohmann::json;
+// Static member initialization
+std::queue<QueuedResponse> LLMChatQueue::m_queue;
+std::mutex LLMChatQueue::m_mutex;
+bool LLMChatQueue::m_initialized = false;
+bool LLMChatQueue::m_running = false;
 
-LLMChatQueue* LLMChatQueue::_instance = nullptr;
+bool LLMChatQueue::Initialize() {
+    if (m_initialized)
+        return true;
 
-LLMChatQueue* LLMChatQueue::instance()
-{
-    if (!_instance)
-        _instance = new LLMChatQueue();
-    return _instance;
-}
-
-void LLMChatQueue::Initialize()
-{
-    m_shutdown = false;
-    m_workerThread = std::thread(&LLMChatQueue::WorkerThread, this);
-    LLMChatLogger::Log(1, "LLM Chat Queue initialized");
-}
-
-void LLMChatQueue::Shutdown()
-{
-    m_shutdown = true;
-    m_queueCondition.notify_all();
-    
-    if (m_workerThread.joinable())
-        m_workerThread.join();
-        
-    // Wait for any remaining API calls
-    uint32 waitTime = 0;
-    while (m_activeApiCalls > 0 && waitTime < LLM_Config.Performance.Threading.ApiTimeout) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        waitTime += 100;
-    }
-    
-    LLMChatLogger::Log(1, "LLM Chat Queue shutdown complete");
-}
-
-LLMChatQueue::~LLMChatQueue()
-{
-    Shutdown();
-}
-
-bool LLMChatQueue::EnqueueResponse(Player* sender, const std::vector<Player*>& responders,
-                                 const std::string& message, uint32 chatType, TeamId team)
-{
-    if (!sender || responders.empty() || message.empty())
-        return false;
-
-    std::lock_guard<std::mutex> lock(m_queueMutex);
-    
-    // Check queue size
-    if (IsFull()) {
-        LLMChatLogger::LogDebug("Queue is full, rejecting response");
-        return false;
-    }
-    
-    // Check per-player pending limit
-    uint32 pendingCount = 0;
-    std::queue<QueuedResponse> tempQueue = m_queue;
-    while (!tempQueue.empty()) {
-        if (tempQueue.front().sender == sender)
-            pendingCount++;
-        tempQueue.pop();
-    }
-    
-    if (pendingCount >= LLM_Config.Queue.MaxPendingPerPlayer) {
-        LLMChatLogger::LogDebug("Player has too many pending responses");
-        return false;
-    }
-    
-    // Create response using the constructor
-    QueuedResponse response(getMSTime(), sender, responders, message, chatType, team, 
-                          0, responders.size(), 0);
-    
-    m_queue.push(std::move(response));
-    m_queueCondition.notify_one();
-    
+    m_initialized = true;
+    m_running = true;
     return true;
 }
 
-void LLMChatQueue::WorkerThread()
-{
-    while (!m_shutdown) {
-        std::unique_lock<std::mutex> lock(m_queueMutex);
-        m_queueCondition.wait(lock, [this] { 
-            return !m_queue.empty() || m_shutdown; 
-        });
+void LLMChatQueue::Shutdown() {
+    m_running = false;
+    m_initialized = false;
 
-        if (m_shutdown) {
-            break;
-        }
-
-        // Get the next response to process
-        QueuedResponse response = std::move(m_queue.front());
-        m_queue.pop();
-        lock.unlock();
-
-        // Process the response
-        ProcessResponse(response);
-    }
-}
-
-bool LLMChatQueue::ProcessResponse(QueuedResponse& response)
-{
-    if (!response.sender || !response.sender->IsInWorld()) {
-        return false;
-    }
-
-    if (response.responsesGenerated >= response.maxResponses) {
-        return false;
-    }
-
-    if (response.responders.empty() || 
-        response.responsesGenerated >= response.responders.size()) {
-        return false;
-    }
-
-    Player* currentResponder = response.responders[response.responsesGenerated];
-    if (!currentResponder || !currentResponder->IsInWorld()) {
-        return false;
-    }
-
-    uint32 currentTime = getMSTime();
-    if (currentTime - response.timestamp > 10000) { // 10 second timeout
-        return false;
-    }
-
-    // Process the response here...
-    return true;
-}
-
-void LLMChatQueue::HandleFailedResponse(QueuedResponse& response)
-{
-    if (response.retryCount < LLM_Config.Queue.RetryAttempts) {
-        response.retryCount++;
-        std::lock_guard<std::mutex> lock(m_queueMutex);
-        m_queue.push(std::move(response));
-        
-        // Add exponential backoff
-        std::this_thread::sleep_for(std::chrono::milliseconds(
-            LLM_Config.Performance.Delays.QueueRetry * (1 << response.retryCount)));
-    } else {
-        LLMChatLogger::LogError("Max retry attempts reached for response");
-    }
-}
-
-bool LLMChatQueue::ValidateResponse(const QueuedResponse& response) const
-{
-    if (!response.sender || !response.sender->IsInWorld())
-        return false;
-        
-    if (response.responsesGenerated >= response.maxResponses)
-        return false;
-        
-    if (!response.responders[response.responsesGenerated] || 
-        !response.responders[response.responsesGenerated]->IsInWorld())
-        return false;
-        
-    uint32 currentTime = getMSTime();
-    if (currentTime - response.timestamp > LLM_Config.Queue.Timeout)
-        return false;
-        
-    return true;
-}
-
-void LLMChatQueue::CleanupQueue()
-{
-    std::lock_guard<std::mutex> lock(m_queueMutex);
-    
-    std::queue<QueuedResponse> tempQueue;
-    uint32 currentTime = getMSTime();
-    
+    std::lock_guard<std::mutex> lock(m_mutex);
     while (!m_queue.empty()) {
-        QueuedResponse& response = m_queue.front();
-        if (currentTime - response.timestamp <= LLM_Config.Queue.Timeout) {
-            tempQueue.push(std::move(response));
-        }
+        auto& response = m_queue.front();
+        response.responsePromise.set_value("Server shutting down");
         m_queue.pop();
     }
+}
+
+bool LLMChatQueue::EnqueueResponse(QueuedResponse&& response) {
+    if (!m_initialized || !m_running)
+        return false;
+
+    if (IsFull())
+        return false;
+
+    if (!ValidateResponse(response))
+        return false;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_queue.push(std::move(response));
+    return true;
+}
+
+bool LLMChatQueue::IsFull() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_queue.size() >= LLM_Config.LLM.MaxQueueSize;
+}
+
+bool LLMChatQueue::IsEmpty() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_queue.empty();
+}
+
+size_t LLMChatQueue::GetSize() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_queue.size();
+}
+
+void LLMChatQueue::ProcessQueue() {
+    if (!m_initialized || !m_running)
+        return;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_queue.empty())
+        return;
+
+    auto& response = m_queue.front();
     
-    m_queue = std::move(tempQueue);
-}
+    try {
+        // Get response from LLM
+        std::string llmResponse = QueryLLM(response.message, 
+            std::to_string(response.senderGUID), 
+            std::to_string(response.targetGUID));
 
-// Implement QueuedResponse move operations
-QueuedResponse::QueuedResponse(QueuedResponse&& other) noexcept
-    : timestamp(other.timestamp)
-    , sender(other.sender)
-    , responders(std::move(other.responders))
-    , message(std::move(other.message))
-    , chatType(other.chatType)
-    , team(other.team)
-    , responsesGenerated(other.responsesGenerated)
-    , maxResponses(other.maxResponses)
-    , retryCount(other.retryCount)
-    , responsePromise(std::move(other.responsePromise))
-{
-}
-
-QueuedResponse& QueuedResponse::operator=(QueuedResponse&& other) noexcept
-{
-    if (this != &other)
-    {
-        timestamp = other.timestamp;
-        sender = other.sender;
-        responders = std::move(other.responders);
-        message = std::move(other.message);
-        chatType = other.chatType;
-        team = other.team;
-        responsesGenerated = other.responsesGenerated;
-        maxResponses = other.maxResponses;
-        retryCount = other.retryCount;
-        responsePromise = std::move(other.responsePromise);
+        // Set the response
+        response.responsePromise.set_value(llmResponse);
     }
-    return *this;
+    catch (const std::exception& e) {
+        LLMChatLogger::LogError("Failed to process response: " + std::string(e.what()));
+        response.responsePromise.set_value("Error processing response");
+    }
+
+    m_queue.pop();
+}
+
+bool LLMChatQueue::ValidateResponse(const QueuedResponse& response) {
+    if (response.senderGUID == 0 || response.targetGUID == 0)
+        return false;
+
+    if (response.message.empty())
+        return false;
+
+    if (response.personality.empty())
+        return false;
+
+    return true;
 } 

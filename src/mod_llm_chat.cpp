@@ -39,6 +39,12 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
+#include "LLMChatEvents.h"
+#include "LLMChatPersonality.h"
+#include "LLMChatLogger.h"
+#include "LLMChatDB.h"
+#include "LLMChatQueue.h"
+#include "LLMChatMemory.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -47,97 +53,6 @@ using tcp = net::ip::tcp;
 using json = nlohmann::json;
 
 // Config Variables
-struct LLMConfig
-{
-    // Core Settings
-    bool Enabled;
-    int32 LogLevel;
-    bool Announce;
-
-    // Provider Settings
-    std::string Endpoint;
-    std::string Model;
-    std::string ApiKey;
-    std::string ApiSecret;
-
-    // Chat Behavior
-    float ChatRange;
-    std::string ResponsePrefix;
-    uint32 MaxResponsesPerMessage;
-    uint32 ResponseChance;
-
-    // Performance & Rate Limiting
-    struct {
-        struct {
-            uint32 WindowSize;
-            uint32 MaxMessages;
-        } GlobalRateLimit;
-
-        struct {
-            uint32 Player;
-            uint32 Bot;
-            uint32 Global;
-        } Cooldowns;
-
-        struct {
-            uint32 MaxThreads;
-            uint32 MaxApiCalls;
-            uint32 ApiTimeout;
-        } Threading;
-
-        struct {
-            uint32 Min;
-            uint32 Max;
-        } MessageLimits;
-
-        struct {
-            uint32 Min;
-            uint32 Max;
-            uint32 Pacified;
-        } Delays;
-    } Performance;
-
-    // Queue Settings
-    struct {
-        uint32 Size;
-        uint32 Timeout;
-    } Queue;
-
-    // LLM Parameters
-    struct {
-        float Temperature;
-        float TopP;
-        uint32 NumPredict;
-        uint32 ContextSize;
-        float RepeatPenalty;
-    } LLM;
-
-    // Memory System
-    struct {
-        bool Enable;
-        uint32 MaxInteractionsPerPair;
-        uint32 ExpirationTime;
-        uint32 MaxContextLength;
-    } Memory;
-
-    // Personality System
-    std::string PersonalityFile;
-
-    // URL components (parsed from endpoint)
-    std::string Host;
-    std::string Port;
-    std::string Target;
-
-    // Database Settings
-    struct {
-        std::string CharacterDB;
-        std::string WorldDB;
-        std::string AuthDB;
-        std::string CustomDB;  // For custom tables like RP profiles
-    } Database;
-};
-
-extern LLMConfig LLM_Config;
 LLMConfig LLM_Config;  // Actual definition
 
 namespace {
@@ -145,10 +60,13 @@ namespace {
     std::atomic<bool> g_moduleShutdown{false};
     std::mutex g_stateMutex;
     std::atomic<uint32> g_activeApiCalls{0};
-    uint32 MAX_API_CALLS = 5; // Default value, will be updated from config
+    uint32 MAX_API_CALLS = 5;
 
-    // Queue structure
-    struct QueuedResponse {
+    // Constants
+    constexpr uint32 RESPONSE_TIMEOUT = 10000; // 10 seconds timeout
+
+    // Renamed to avoid conflict with LLMChatQueue.h
+    struct LocalQueuedResponse {
         uint32 timestamp;
         Player* sender;
         std::vector<Player*> responders;
@@ -160,16 +78,13 @@ namespace {
     };
 
     // Global queue and mutex
-    std::queue<QueuedResponse> responseQueue;
+    std::queue<LocalQueuedResponse> responseQueue;
     std::mutex queueMutex;
     std::condition_variable queueCondition;
-    uint32 const RESPONSE_TIMEOUT = 10000; // 10 seconds timeout
 
     // Worker thread control
     std::thread g_workerThread;
     bool g_workerRunning = false;
-
-    // Add to global variables section at the top
     std::atomic<uint32> g_activeThreads{0};
 }
 
@@ -191,11 +106,11 @@ void WorkerThread() {
 
             // Process the front of the queue
             if (!responseQueue.empty()) {
-                QueuedResponse& queuedResponse = responseQueue.front();
+                LocalQueuedResponse& queuedResponse = responseQueue.front();
                 
                 // Check if response has timed out
                 uint32 currentTime = getMSTime();
-                if (currentTime - queuedResponse.timestamp > (LLM_Config.Queue.Timeout * 1000)) {
+                if (currentTime - queuedResponse.timestamp > RESPONSE_TIMEOUT) {
                     LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
                         queuedResponse.sender->GetName(), LLM_Config.Queue.Timeout);
                     responseQueue.pop();
@@ -291,10 +206,10 @@ void ProcessResponseQueue() {
     }
 
     // Only process the front of the queue
-    QueuedResponse& queuedResponse = responseQueue.front();
+    LocalQueuedResponse& queuedResponse = responseQueue.front();
         
     // Check if response has timed out
-    if (currentTime - queuedResponse.timestamp > (LLM_Config.Queue.Timeout * 1000)) {
+    if (currentTime - queuedResponse.timestamp > RESPONSE_TIMEOUT) {
         LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
             queuedResponse.sender->GetName(), LLM_Config.Queue.Timeout);
         responseQueue.pop();
@@ -364,207 +279,10 @@ void ProcessResponseQueue() {
     }).detach();
 }
 
-// Logger class definition
-class LLMChatLogger {
-public:
-    static void Log(int32 level, std::string const& message) {
-        // Skip logging if disabled (level 0)
-        if (LLM_Config.LogLevel == 0) {
-            return;
-        }
-        
-        // Only log if current level is high enough
-        if (LLM_Config.LogLevel >= level) {
-            LOG_INFO("module.llm_chat", "{}", message);
-        }
-    }
-
-    static void LogChat(std::string const& playerName, std::string const& input, std::string const& response) {
-        // Skip logging if disabled (level 0)
-        if (LLM_Config.LogLevel == 0) {
-            return;
-        }
-        
-        // Only log chat at detailed level or higher
-        if (LLM_Config.LogLevel >= 2) {
-            std::string inputMsg = "Player " + playerName + " says: " + input;
-            std::string responseMsg = "AI Response: " + response;
-            LOG_INFO("module.llm_chat", "{}", inputMsg);
-            LOG_INFO("module.llm_chat", "{}", responseMsg);
-        }
-    }
-
-    static void LogError(std::string const& message) {
-        // Always log errors unless logging is completely disabled
-        if (LLM_Config.LogLevel > 0) {
-            LOG_ERROR("module.llm_chat", "{}", message);
-        }
-    }
-
-    static void LogDebug(std::string const& message) {
-        // Only log debug messages at highest level
-        if (LLM_Config.LogLevel >= 3) {
-            LOG_DEBUG("module.llm_chat", "{}", message);
-        }
-    }
-};
-
 // Forward declarations
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team);
 std::string QueryLLM(std::string const& message, const std::string& senderName, const std::string& responderName);
 void AddToMemory(const std::string& sender, const std::string& responder, const std::string& message, const std::string& response);
-
-// Event class definitions
-class RemovePacifiedEvent : public BasicEvent
-{
-    Player* player;
-
-public:
-    RemovePacifiedEvent(Player* p) : player(p) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (player && player->IsInWorld())
-        {
-            player->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-        }
-        return true;
-    }
-};
-
-class BotResponseEvent : public BasicEvent
-{
-    Player* responder;
-    Player* originalSender;
-    std::string response;
-    uint32 chatType;
-    std::string message;
-    TeamId team;
-    uint32 pacifiedDuration;
-
-public:
-    BotResponseEvent(Player* r, Player* s, std::string resp, uint32 t, std::string m, TeamId tm, uint32 pd) 
-        : responder(r), originalSender(s), response(resp), chatType(t), message(m), team(tm), pacifiedDuration(pd) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (!responder || !responder->IsInWorld())
-            return true;
-
-        // Double check we're not responding as the original sender
-        if (originalSender && 
-            (responder == originalSender || 
-             (responder->GetSession() && originalSender->GetSession() && 
-              responder->GetSession()->GetAccountId() == originalSender->GetSession()->GetAccountId())))
-        {
-            LOG_ERROR("module.llm_chat", "Prevented response from original sender's account");
-            return true;
-        }
-
-        std::string logMsg = "Executing response from " + responder->GetName() + ": " + response;
-        LOG_INFO("module.llm_chat", "{}", logMsg);
-
-        // Check if the bot has a session
-        if (WorldSession* session = responder->GetSession())
-        {
-            if (session->IsBot())
-            {
-                // Stop any current movement
-                responder->StopMoving();
-                responder->ClearInCombat();
-                
-                // Clear any current actions
-                responder->InterruptNonMeleeSpells(false);
-                responder->RemoveAurasByType(SPELL_AURA_MOUNTED);
-                
-                // Remove food/drink auras (using actual aura IDs)
-                responder->RemoveAura(433);  // Food
-                responder->RemoveAura(430);  // Drink
-            }
-        }
-
-        switch (chatType)
-        {
-            case CHAT_MSG_SAY:
-                responder->Say(response, LANG_UNIVERSAL);
-                break;
-                
-            case CHAT_MSG_YELL:
-                responder->Yell(response, LANG_UNIVERSAL);
-                break;
-                
-            case CHAT_MSG_PARTY:
-            case CHAT_MSG_PARTY_LEADER:
-                if (Group* group = responder->GetGroup())
-                {
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, static_cast<ChatMsg>(chatType), 
-                        LANG_UNIVERSAL, responder, nullptr, response);
-                    group->BroadcastPacket(&data, false);
-                }
-                break;
-                
-            case CHAT_MSG_GUILD:
-                if (Guild* guild = responder->GetGuild())
-                {
-                    guild->BroadcastToGuild(responder->GetSession(), false, 
-                        response, LANG_UNIVERSAL);
-                }
-                break;
-                
-            case CHAT_MSG_CHANNEL:
-                if (ChannelMgr* cMgr = ChannelMgr::forTeam(team))
-                {
-                    size_t spacePos = message.find(' ');
-                    if (spacePos != std::string::npos)
-                    {
-                        std::string channelName = message.substr(0, spacePos);
-                        if (Channel* channel = cMgr->GetChannel(channelName, responder))
-                        {
-                            channel->Say(responder->GetGUID(), response, LANG_UNIVERSAL);
-                        }
-                    }
-                }
-                break;
-        }
-
-        // Add a small delay before the bot can act again
-        if (WorldSession* session = responder->GetSession())
-        {
-            if (session->IsBot())
-            {
-                responder->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
-                responder->m_Events.AddEvent(new RemovePacifiedEvent(responder), 
-                    responder->m_Events.CalculateTime(pacifiedDuration));
-            }
-        }
-
-        std::string deliveredMsg = "Successfully delivered response from " + responder->GetName();
-        LOG_INFO("module.llm_chat", "{}", deliveredMsg);
-        return true;
-    }
-};
-
-class TriggerResponseEvent : public BasicEvent
-{
-    Player* player;
-    std::string message;
-    uint32 chatType;
-    TeamId team;
-
-public:
-    TriggerResponseEvent(Player* p, std::string msg, uint32 type) 
-        : player(p), message(msg), chatType(type), team(p->GetTeamId()) {}
-
-    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
-    {
-        if (!player || !player->IsInWorld())
-            return true;
-
-        SendAIResponse(player, message, chatType, team);
-        return true;
-    }
-};
 
 // Add a conversation counter
 std::map<std::string, uint32> conversationRounds;  // Key: channelName+originalMessage, Value: round count
@@ -576,15 +294,6 @@ struct GlobalRateLimit {
     uint32 lastMessageTime{0};
     uint32 messageCount{0};
 } globalRateLimit;
-
-// Conversation memory structure
-struct ConversationMemory {
-    uint32 timestamp;
-    std::string sender;
-    std::string responder;
-    std::string message;
-    std::string response;
-};
 
 // Memory storage - key is sender+responder pair
 std::map<std::string, std::vector<ConversationMemory>> g_conversationHistory;
@@ -632,8 +341,8 @@ void AddToMemory(const std::string& sender, const std::string& responder,
         history.end()
     );
     
-    if (history.size() > LLM_Config.Memory.MaxInteractionsPerPair) {
-        history.resize(LLM_Config.Memory.MaxInteractionsPerPair);
+    if (history.size() > MAX_MEMORY_PER_PAIR) {
+        history.resize(MAX_MEMORY_PER_PAIR);
     }
 }
 
@@ -917,17 +626,6 @@ std::string GetMoodBasedResponse(const std::string& tone) {
     return "You are a seasoned adventurer with many tales to share. "
            "Be natural but always stay true to the World of Warcraft setting.";
 }
-
-// Personality structure
-struct Personality {
-    std::string id;
-    std::string name;
-    std::string prompt;
-    std::vector<std::string> emotions;
-    nlohmann::json traits;
-    std::vector<std::string> knowledge_base;
-    nlohmann::json chat_style;
-};
 
 // Global variables
 std::vector<Personality> g_personalities;
@@ -1706,7 +1404,7 @@ public:
             g_activeApiCalls.load()));
     }
 
-    void OnUpdate(uint32 diff) override {
+    void OnUpdate(uint32 /*diff*/) override {
         if (!LLM_Config.Memory.Enable) {
             return;
         }
@@ -1733,7 +1431,7 @@ private:
     uint32 lastMemoryCleanup;
 };
 
-void Add_LLMChatScripts()
+void Addmod_llm_chatScripts()
 {
     new LLMChat_WorldScript();
     new LLMChatAnnounce();
@@ -1743,15 +1441,15 @@ void Add_LLMChatScripts()
 
 void LoadConfig()
 {
-    if (!sConfigMgr->LoadModulesConfig("mod_llm_chat.conf")) {
+    if (!sConfigMgr->LoadModulesConfigs()) {
         LOG_ERROR("module", "LLM Chat: Failed to load configuration.");
         return;
     }
 
     // Load personalities
-    std::string personalitiesFile = sConfigMgr->GetStringDefault("LLMChat.PersonalitiesFile", "conf/personalities.json");
+    std::string personalitiesFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalitiesFile", "conf/personalities.json");
     if (!LLMChatPersonality::LoadPersonalities(personalitiesFile)) {
-        LOG_ERROR("module", "LLM Chat: Failed to load personalities from %s", personalitiesFile.c_str());
+        LOG_ERROR("module", "LLM Chat: Failed to load personalities from {}", personalitiesFile);
     }
 
     // ... rest of config loading ...

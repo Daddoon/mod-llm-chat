@@ -1,10 +1,10 @@
 #ifndef MOD_LLM_CHAT_DB_H
 #define MOD_LLM_CHAT_DB_H
 
-#include "DatabaseEnv.h"
-#include "Player.h"
-#include <string>
+#include "Define.h"
 #include <map>
+#include <string>
+#include <utility>
 
 class LLMChatDB
 {
@@ -22,8 +22,6 @@ public:
     static int32 GetRelationship(uint32 botGuid, uint32 playerGuid);
 
 private:
-    static bool CreateDatabaseIfNotExists();
-    static bool CreateTablesIfNotExist();
     static bool ExecuteQuery(const char* sql);
 };
 

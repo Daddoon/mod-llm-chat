@@ -1,73 +1,62 @@
 #include "LLMChatPersonality.h"
 #include "LLMChatLogger.h"
 #include "Random.h"
+#include "Player.h"
+#include "Group.h"
+#include "Guild.h"
+#include "DBCStores.h"
+#include "SharedDefines.h"
+#include "Config.h"
 #include <fstream>
 #include <algorithm>
+#include <sstream>
 
 // Static member initialization
 std::vector<Personality> LLMChatPersonality::g_personalities;
-nlohmann::json LLMChatPersonality::g_emotion_types;
-nlohmann::json LLMChatPersonality::g_faction_data;
-nlohmann::json LLMChatPersonality::g_race_data;
-nlohmann::json LLMChatPersonality::g_class_data;
+std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_emotion_types;
+std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_faction_data;
+std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_race_data;
+std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_class_data;
 
 bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
     try {
-        std::ifstream file(filename);
-        if (!file.is_open()) {
-            LLMChatLogger::LogError("Failed to open personality file: " + filename);
+        if (!sConfigMgr->LoadModulesConfigs()) {
+            LLMChatLogger::LogError("Failed to load personality file: " + filename);
             return false;
         }
 
-        nlohmann::json data = nlohmann::json::parse(file);
         g_personalities.clear();
         
-        // Load personalities
-        if (data.contains("personalities")) {
-            for (const auto& item : data["personalities"]) {
-                try {
-                    Personality personality;
-                    personality.id = item["id"].get<std::string>();
-                    personality.name = item["name"].get<std::string>();
-                    personality.prompt = item["prompt"].get<std::string>();
-                    personality.base_context = item["base_context"].get<std::string>();
-                    personality.emotions = item["emotions"].get<std::vector<std::string>>();
-                    personality.traits = item["traits"];
-                    personality.knowledge_base = item["knowledge_base"].get<std::vector<std::string>>();
-                    personality.chat_style = item["chat_style"];
-                    personality.response_patterns = item["response_patterns"];
-                    
-                    // Optional fields
-                    if (item.contains("faction_responses"))
-                        personality.faction_responses = item["faction_responses"];
-                    if (item.contains("race_responses"))
-                        personality.race_responses = item["race_responses"];
-                    if (item.contains("class_responses"))
-                        personality.class_responses = item["class_responses"];
-                    
-                    g_personalities.push_back(personality);
-                }
-                catch (const std::exception& e) {
-                    LLMChatLogger::LogError("Error parsing personality: " + std::string(e.what()));
+        // Load personalities from config
+        uint32 count = sConfigMgr->GetOption<uint32>("Personalities.Count", 0);
+        for (uint32 i = 0; i < count; ++i) {
+            try {
+                std::string base = "Personality." + std::to_string(i) + ".";
+                Personality personality;
+                
+                personality.id = sConfigMgr->GetOption<std::string>(base + "Id", "");
+                if (personality.id.empty()) {
                     continue;
                 }
+                
+                personality.name = sConfigMgr->GetOption<std::string>(base + "Name", "");
+                personality.prompt = sConfigMgr->GetOption<std::string>(base + "Prompt", "");
+                personality.base_context = sConfigMgr->GetOption<std::string>(base + "BaseContext", "");
+                
+                // Load emotions
+                std::string emotions = sConfigMgr->GetOption<std::string>(base + "Emotions", "");
+                std::istringstream iss(emotions);
+                std::string emotion;
+                while (std::getline(iss, emotion, ',')) {
+                    personality.emotions.push_back(emotion);
+                }
+                
+                g_personalities.push_back(personality);
             }
-        }
-
-        // Load emotion types
-        if (data.contains("emotion_types")) {
-            g_emotion_types = data["emotion_types"];
-        }
-
-        // Load interaction rules
-        if (data.contains("interaction_rules")) {
-            auto rules = data["interaction_rules"];
-            if (rules.contains("faction_specific"))
-                g_faction_data = rules["faction_specific"];
-            if (rules.contains("race_specific"))
-                g_race_data = rules["race_specific"];
-            if (rules.contains("class_specific"))
-                g_class_data = rules["class_specific"];
+            catch (const std::exception& e) {
+                LLMChatLogger::LogError("Error parsing personality " + std::to_string(i) + ": " + std::string(e.what()));
+                continue;
+            }
         }
 
         LLMChatLogger::Log(2, "Loaded " + std::to_string(g_personalities.size()) + 
@@ -123,11 +112,14 @@ std::string LLMChatPersonality::DetectEmotion(const std::string& message) {
     // Count emotion keywords from emotion types
     std::map<std::string, int> emotionScores;
     
-    for (const auto& [emotion, data] : g_emotion_types.items()) {
+    for (const auto& emotion_pair : g_emotion_types) {
+        const std::string& emotion = emotion_pair.first;
+        const auto& data = emotion_pair.second;
         int score = 0;
-        if (data.contains("typical_phrases")) {
-            for (const auto& phrase : data["typical_phrases"]) {
-                std::string keyword = phrase.get<std::string>();
+        
+        if (data.find("typical_phrases") != data.end()) {
+            for (const auto& phrase : data.at("typical_phrases")) {
+                std::string keyword{phrase};
                 std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
                 size_t pos = 0;
                 while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
@@ -163,11 +155,13 @@ std::string LLMChatPersonality::DetectTone(const std::string& message) {
     std::map<std::string, int> toneScores;
     
     // Score each tone based on emotion types phrases
-    for (const auto& [emotion, data] : g_emotion_types.items()) {
+    for (const auto& emotion_pair : g_emotion_types) {
+        const std::string& emotion = emotion_pair.first;
+        const auto& data = emotion_pair.second;
         int score = 0;
-        if (data.contains("typical_phrases")) {
-            for (const auto& phrase : data["typical_phrases"]) {
-                std::string keyword = phrase.get<std::string>();
+        if (data.find("typical_phrases") != data.end()) {
+            for (const auto& phrase : data.at("typical_phrases")) {
+                std::string keyword{phrase};
                 std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
                 size_t pos = 0;
                 while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
@@ -200,10 +194,13 @@ std::string LLMChatPersonality::GetMoodBasedResponse(const std::string& tone,
     CharacterDetails recipientDetails = GetCharacterDetails(recipient);
     
     // Get response style from emotion types if available
-    if (g_emotion_types.contains(tone) && g_emotion_types[tone].contains("response_style")) {
-        std::string style = g_emotion_types[tone]["response_style"].get<std::string>();
-        return "You are a " + style + " adventurer in World of Warcraft. " +
-               "Maintain this tone while staying true to the game's setting and lore.";
+    if (g_emotion_types.find(tone) != g_emotion_types.end()) {
+        const auto& tone_data = g_emotion_types.at(tone);
+        if (tone_data.find("response_style") != tone_data.end()) {
+            std::string style = tone_data.at("response_style");
+            return "You are a " + style + " adventurer in World of Warcraft. " +
+                   "Maintain this tone while staying true to the game's setting and lore.";
+        }
     }
 
     // Default response if tone not found
@@ -231,12 +228,8 @@ CharacterDetails LLMChatPersonality::GetCharacterDetails(Player* player) {
     details.is_in_raid = player->GetGroup() && player->GetGroup()->isRaidGroup();
     details.is_pvp_flagged = player->IsPvP();
 
-    // Load RP profile if it exists
+    // Load RP profile if available
     LoadRPProfile(details, player->GetName());
-    
-    // Load achievements and history
-    LoadCharacterAchievements(details, player->GetGUID().GetCounter());
-    LoadCharacterHistory(details, player->GetGUID().GetCounter());
 
     return details;
 }
@@ -245,14 +238,11 @@ CharacterDetails LLMChatPersonality::GetCharacterDetailsFromDB(std::string const
     CharacterDetails details = QueryCharacterFromDB(name);
     if (!details.name.empty()) {
         LoadRPProfile(details, name);
-        // Note: GUID would be fetched in QueryCharacterFromDB
-        LoadCharacterAchievements(details, 0); // Use actual GUID from query
-        LoadCharacterHistory(details, 0); // Use actual GUID from query
     }
     return details;
 }
 
-std::string LLMChatPersonality::GetFactionName(uint32 faction) {
+std::string LLMChatPersonality::GetFactionName(TeamId faction) {
     switch (faction) {
         case TEAM_ALLIANCE: return "Alliance";
         case TEAM_HORDE: return "Horde";
@@ -321,14 +311,13 @@ std::string LLMChatPersonality::GetGuildInfo(Player* player) {
 bool LLMChatPersonality::LoadRPProfile(CharacterDetails& details, std::string const& character_name) {
     // Query custom RP profile table if it exists
     QueryResult result = CharacterDatabase.Query(
-        "SELECT rp_profile, character_history FROM `%s`.character_rp_profiles WHERE name = '%s'",
+        "SELECT rp_profile FROM `{}`.character_rp_profiles WHERE name = '{}'",
         LLM_Config.Database.CustomDB.c_str(),
         character_name.c_str());
 
     if (result) {
         Field* fields = result->Fetch();
-        details.rp_profile = fields[0].GetString();
-        details.character_history = fields[1].GetString();
+        details.rp_profile = fields[0].Get<std::string>();
         return true;
     }
     return false;
@@ -336,74 +325,28 @@ bool LLMChatPersonality::LoadRPProfile(CharacterDetails& details, std::string co
 
 void LLMChatPersonality::SaveRPProfile(const CharacterDetails& details) {
     CharacterDatabase.Query(
-        "REPLACE INTO `%s`.character_rp_profiles (name, rp_profile, character_history) VALUES ('%s', '%s', '%s')",
+        "REPLACE INTO `{}`.character_rp_profiles (name, rp_profile) VALUES ('{}', '{}')",
         LLM_Config.Database.CustomDB.c_str(),
         details.name.c_str(),
-        details.rp_profile.c_str(),
-        details.character_history.c_str());
+        details.rp_profile.c_str());
 }
 
 CharacterDetails LLMChatPersonality::QueryCharacterFromDB(std::string const& name) {
     CharacterDetails details;
     QueryResult result = CharacterDatabase.Query(
-        "SELECT race, class, level, zone FROM `%s`.characters WHERE name = '%s'",
+        "SELECT race, class, level, zone FROM `{}`.characters WHERE name = '{}'",
         LLM_Config.Database.CharacterDB.c_str(),
         name.c_str());
 
     if (result) {
         Field* fields = result->Fetch();
         details.name = name;
-        details.race = GetRaceName(fields[0].GetUInt8());
-        details.class_type = GetClassName(fields[1].GetUInt8());
-        details.level = fields[2].GetUInt8();
-        details.current_zone = GetZoneName(fields[3].GetUInt32());
+        details.race = GetRaceName(fields[0].Get<uint8>());
+        details.class_type = GetClassName(fields[1].Get<uint8>());
+        details.level = fields[2].Get<uint8>();
+        details.current_zone = GetZoneName(fields[3].Get<uint32>());
     }
     return details;
 }
 
-bool LLMChatPersonality::LoadCharacterAchievements(CharacterDetails& details, uint32 guid) {
-    // Query character_achievement table for notable achievements
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT achievement FROM `%s`.character_achievement WHERE guid = %u ORDER BY date DESC LIMIT 5",
-        LLM_Config.Database.CharacterDB.c_str(),
-        guid);
-
-    if (result) {
-        std::string achievements;
-        do {
-            Field* fields = result->Fetch();
-            uint32 achievementId = fields[0].GetUInt32();
-            if (AchievementEntry const* achievement = sAchievementStore.LookupEntry(achievementId)) {
-                if (!achievements.empty())
-                    achievements += ", ";
-                achievements += achievement->name[0];
-            }
-        } while (result->NextRow());
-
-        details.notable_achievements = achievements;
-        return true;
-    }
-    return false;
-}
-
-bool LLMChatPersonality::LoadCharacterHistory(CharacterDetails& details, uint32 guid) {
-    // This could be expanded to include more character history data
-    // For now, we'll just check if they're a veteran player
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT COUNT(*) FROM `%s`.character_achievement WHERE guid = %u",
-        LLM_Config.Database.CharacterDB.c_str(),
-        guid);
-
-    if (result) {
-        Field* fields = result->Fetch();
-        uint32 achievementCount = fields[0].GetUInt32();
-        if (achievementCount > 100)
-            details.character_history = "Veteran player with many achievements";
-        else if (achievementCount > 50)
-            details.character_history = "Experienced adventurer";
-        else
-            details.character_history = "Budding adventurer";
-        return true;
-    }
-    return false;
-} 
+ 

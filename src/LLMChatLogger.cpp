@@ -1,15 +1,31 @@
 #include "LLMChatLogger.h"
 #include "Log.h"
 
-void LLMChatLogger::Log(int32 level, std::string const& message) {
-    // Skip logging if disabled (level 0)
-    if (LLM_Config.LogLevel == 0) {
-        return;
-    }
-    
-    // Only log if current level is high enough
+void LLMChatLogger::Log(uint32 level, std::string const& message) {
     if (LLM_Config.LogLevel >= level) {
-        LOG_INFO("module.llm_chat", "{}", message);
+        switch (level) {
+            case 1:
+                LOG_FATAL("module.llm_chat", "{}", message);
+                break;
+            case 2:
+                LOG_ERROR("module.llm_chat", "{}", message);
+                break;
+            case 3:
+                LOG_WARN("module.llm_chat", "{}", message);
+                break;
+            case 4:
+                LOG_INFO("module.llm_chat", "{}", message);
+                break;
+            case 5:
+                LOG_DEBUG("module.llm_chat", "{}", message);
+                break;
+            case 6:
+                LOG_TRACE("module.llm_chat", "{}", message);
+                break;
+            default:
+                LOG_INFO("module.llm_chat", "{}", message);
+                break;
+        }
     }
 }
 

@@ -1,68 +1,44 @@
-#ifndef MOD_LLM_CHAT_QUEUE_H
-#define MOD_LLM_CHAT_QUEUE_H
+#ifndef _LLM_CHAT_QUEUE_H_
+#define _LLM_CHAT_QUEUE_H_
 
-#include "Player.h"
-#include "mod_llm_chat_config.h"
+#include "Define.h"
+#include <string>
 #include <queue>
 #include <mutex>
-#include <condition_variable>
 #include <future>
-#include <thread>
-#include <atomic>
 
 struct QueuedResponse {
-    uint32 timestamp;
-    Player* sender;
-    std::vector<Player*> responders;
+    uint32 senderGUID;
+    uint32 targetGUID;
     std::string message;
-    uint32 chatType;
-    TeamId team;
-    uint32 responsesGenerated;
-    uint32 maxResponses;
-    uint32 retryCount;
+    std::string personality;
+    std::promise<std::string> responsePromise;
 
-    // Default constructor
-    QueuedResponse() = default;
-
-    // Constructor with parameters
-    QueuedResponse(uint32 ts, Player* s, std::vector<Player*> r, std::string m, 
-                  uint32 ct, TeamId t, uint32 rg = 0, uint32 mr = 0, uint32 rc = 0)
-        : timestamp(ts)
-        , sender(s)
-        , responders(std::move(r))
-        , message(std::move(m))
-        , chatType(ct)
-        , team(t)
-        , responsesGenerated(rg)
-        , maxResponses(mr)
-        , retryCount(rc)
-    {}
+    QueuedResponse(uint32 sender, uint32 target, const std::string& msg, const std::string& pers)
+        : senderGUID(sender), targetGUID(target), message(msg), personality(pers) {}
 
     // Copy constructor
-    QueuedResponse(const QueuedResponse& other)
-        : timestamp(other.timestamp)
-        , sender(other.sender)
-        , responders(other.responders)
-        , message(other.message)
-        , chatType(other.chatType)
-        , team(other.team)
-        , responsesGenerated(other.responsesGenerated)
-        , maxResponses(other.maxResponses)
-        , retryCount(other.retryCount)
-    {}
+    QueuedResponse(const QueuedResponse& other) = delete;
 
-    // Copy assignment operator
-    QueuedResponse& operator=(const QueuedResponse& other) {
+    // Move constructor
+    QueuedResponse(QueuedResponse&& other) noexcept
+        : senderGUID(other.senderGUID)
+        , targetGUID(other.targetGUID)
+        , message(std::move(other.message))
+        , personality(std::move(other.personality))
+        , responsePromise(std::move(other.responsePromise)) {}
+
+    // Copy assignment
+    QueuedResponse& operator=(const QueuedResponse& other) = delete;
+
+    // Move assignment
+    QueuedResponse& operator=(QueuedResponse&& other) noexcept {
         if (this != &other) {
-            timestamp = other.timestamp;
-            sender = other.sender;
-            responders = other.responders;
-            message = other.message;
-            chatType = other.chatType;
-            team = other.team;
-            responsesGenerated = other.responsesGenerated;
-            maxResponses = other.maxResponses;
-            retryCount = other.retryCount;
+            senderGUID = other.senderGUID;
+            targetGUID = other.targetGUID;
+            message = std::move(other.message);
+            personality = std::move(other.personality);
+            responsePromise = std::move(other.responsePromise);
         }
         return *this;
     }
@@ -70,33 +46,22 @@ struct QueuedResponse {
 
 class LLMChatQueue {
 public:
-    static LLMChatQueue* instance();
-    void Initialize();
-    void Shutdown();
-    ~LLMChatQueue();
-
-    bool EnqueueResponse(Player* sender, const std::vector<Player*>& responders,
-                        const std::string& message, uint32 chatType, TeamId team);
-    bool IsFull() const { return m_queue.size() >= 25; }
+    static bool Initialize();
+    static void Shutdown();
+    
+    static bool EnqueueResponse(QueuedResponse&& response);
+    static bool IsFull();
+    static bool IsEmpty();
+    static size_t GetSize();
+    static void ProcessQueue();
 
 private:
-    LLMChatQueue() = default;
-    static LLMChatQueue* _instance;
+    static std::queue<QueuedResponse> m_queue;
+    static std::mutex m_mutex;
+    static bool m_initialized;
+    static bool m_running;
 
-    void WorkerThread();
-    bool ProcessResponse(QueuedResponse& response);
-    void HandleFailedResponse(QueuedResponse& response);
-    bool ValidateResponse(const QueuedResponse& response) const;
-    void CleanupQueue();
-
-    std::queue<QueuedResponse> m_queue;
-    std::mutex m_queueMutex;
-    std::condition_variable m_queueCondition;
-    std::thread m_workerThread;
-    bool m_shutdown{false};
-    std::atomic<uint32> m_activeApiCalls{0};
+    static bool ValidateResponse(const QueuedResponse& response);
 };
 
-#define sLLMChatQueue LLMChatQueue::instance()
-
-#endif // MOD_LLM_CHAT_QUEUE_H 
+#endif // _LLM_CHAT_QUEUE_H_ 

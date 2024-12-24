@@ -1,6 +1,15 @@
-#ifndef MOD_LLM_CHAT_H
-#define MOD_LLM_CHAT_H
+#ifndef _MOD_LLM_CHAT_H_
+#define _MOD_LLM_CHAT_H_
 
-void Add_LLMChatScripts();
+#include "Define.h"
+#include "mod_llm_chat_config.h"
+#include <string>
 
-#endif // MOD_LLM_CHAT_H
+// Function declarations
+void LoadConfig();
+std::string QueryLLM(const std::string& message, const std::string& sender, const std::string& recipient);
+bool InitializeModule();
+void CleanupModule();
+void Addmod_llm_chatScripts();
+
+#endif // _MOD_LLM_CHAT_H_
