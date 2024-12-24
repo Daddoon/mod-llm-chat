@@ -34,6 +34,39 @@ cmake \
 git
 
 
+## Install the tables for the character database 
+
+The tables are requried for storing long term conversation memory with playerbots and characters as well as setting up initial character traits and responses
+
+
+Navigate to the sql directory 
+
+azerothcore-wotlk/modules/mod_llm_chat/data/sql/db-characters/base 
+
+install the tables with command 
+
+`mysql -u root -p acore_characters < db_llm_chat.sql`
+
+## Confirm the tables exist 
+
+
+run command to Confirm the tables exist
+
+`mysql -u root -p acore_characters -e "SHOW TABLES LIKE 'bot_llmchat%';"`
+
++-------------------------------------------+
+| Tables_in_acore_characters (bot_llmchat%) |
++-------------------------------------------+
+| bot_llmchat_backstories                   |
+| bot_llmchat_conversations                 |
+| bot_llmchat_emotions                      |
+| bot_llmchat_memories                      |
+| bot_llmchat_personalities                 |
+| bot_llmchat_relationships                 |
+| bot_llmchat_triggers                      |
++-------------------------------------------+
+
+
 ### 2. Install LLM Provider
 
 #### Option A: Ollama (Recommended)
