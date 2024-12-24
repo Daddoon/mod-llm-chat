@@ -127,6 +127,14 @@ struct LLMConfig
     std::string Host;
     std::string Port;
     std::string Target;
+
+    // Database Settings
+    struct {
+        std::string CharacterDB;
+        std::string WorldDB;
+        std::string AuthDB;
+        std::string CustomDB;  // For custom tables like RP profiles
+    } Database;
 };
 
 extern LLMConfig LLM_Config;
@@ -160,6 +168,200 @@ namespace {
     // Worker thread control
     std::thread g_workerThread;
     bool g_workerRunning = false;
+
+    // Add to global variables section at the top
+    std::atomic<uint32> g_activeThreads{0};
+}
+
+// Add worker thread function declaration at the top with other declarations
+void WorkerThread();
+
+// Add the implementation
+void WorkerThread() {
+    while (!g_moduleShutdown) {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            queueCondition.wait(lock, []() {
+                return !responseQueue.empty() || g_moduleShutdown;
+            });
+
+            if (g_moduleShutdown) {
+                break;
+            }
+
+            // Process the front of the queue
+            if (!responseQueue.empty()) {
+                QueuedResponse& queuedResponse = responseQueue.front();
+                
+                // Check if response has timed out
+                uint32 currentTime = getMSTime();
+                if (currentTime - queuedResponse.timestamp > (LLM_Config.Queue.Timeout * 1000)) {
+                    LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
+                        queuedResponse.sender->GetName(), LLM_Config.Queue.Timeout);
+                    responseQueue.pop();
+                    continue;
+                }
+
+                // Get next responder
+                if (queuedResponse.responsesGenerated >= queuedResponse.maxResponses || 
+                    queuedResponse.responsesGenerated >= queuedResponse.responders.size()) {
+                    responseQueue.pop();
+                    continue;
+                }
+
+                Player* currentResponder = queuedResponse.responders[queuedResponse.responsesGenerated];
+                
+                // Increment active threads before starting new one
+                g_activeThreads++;
+                
+                // Create a copy of the necessary data for the thread
+                Player* sender = queuedResponse.sender;
+                std::string message = queuedResponse.message;
+                uint32 chatType = queuedResponse.chatType;
+                TeamId team = queuedResponse.team;
+                
+                // Process the response for this bot in a separate thread
+                std::thread([sender, message, currentResponder, chatType, team]() {
+                    std::string response = QueryLLM(message, sender->GetName(), currentResponder->GetName());
+                    
+                    if (!response.empty()) {
+                        // Add the response prefix if configured
+                        if (!LLM_Config.ResponsePrefix.empty()) {
+                            response = LLM_Config.ResponsePrefix + response;
+                        }
+
+                        // Schedule the response with increasing delay based on response number
+                        uint32 baseDelay = 2000;  // 2 seconds base delay
+                        uint32 delay = baseDelay + (urand(0, 1500));  // Add random delay up to 1.5s
+                        
+                        // Create the event
+                        BotResponseEvent* event = new BotResponseEvent(
+                            currentResponder, 
+                            sender, 
+                            response, 
+                            chatType, 
+                            message, 
+                            team,
+                            LLM_Config.Performance.Delays.Pacified
+                        );
+
+                        // Add the event to the responder's event queue
+                        if (currentResponder && currentResponder->IsInWorld()) {
+                            currentResponder->m_Events.AddEvent(event, 
+                                currentResponder->m_Events.CalculateTime(delay));
+                        } else {
+                            delete event;
+                        }
+                    }
+
+                    // Increment the responses generated count and decrement active threads
+                    {
+                        std::lock_guard<std::mutex> lock(queueMutex);
+                        if (!responseQueue.empty()) {
+                            responseQueue.front().responsesGenerated++;
+                        }
+                        g_activeThreads--;
+                    }
+                }).detach();
+            }
+        }
+
+        // Small delay to prevent tight loop
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+// Add declaration at the top with other declarations
+void ProcessResponseQueue();
+
+// Add implementation before WorkerThread function
+void ProcessResponseQueue() {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    uint32 currentTime = getMSTime();
+
+    // Don't process if we have too many active threads
+    if (g_activeThreads >= LLM_Config.Performance.Threading.MaxThreads) {
+        LOG_DEBUG("module.llm_chat", "Max concurrent threads reached ({}), waiting...", 
+            LLM_Config.Performance.Threading.MaxThreads);
+        return;
+    }
+
+    if (responseQueue.empty()) {
+        return;
+    }
+
+    // Only process the front of the queue
+    QueuedResponse& queuedResponse = responseQueue.front();
+        
+    // Check if response has timed out
+    if (currentTime - queuedResponse.timestamp > (LLM_Config.Queue.Timeout * 1000)) {
+        LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
+            queuedResponse.sender->GetName(), LLM_Config.Queue.Timeout);
+        responseQueue.pop();
+        return;
+    }
+
+    // Get next responder
+    if (queuedResponse.responsesGenerated >= queuedResponse.maxResponses || 
+        queuedResponse.responsesGenerated >= queuedResponse.responders.size()) {
+        responseQueue.pop();
+        return;
+    }
+
+    Player* currentResponder = queuedResponse.responders[queuedResponse.responsesGenerated];
+    
+    // Increment active threads before starting new one
+    g_activeThreads++;
+    
+    // Create a copy of the necessary data for the thread
+    Player* sender = queuedResponse.sender;
+    std::string message = queuedResponse.message;
+    uint32 chatType = queuedResponse.chatType;
+    TeamId team = queuedResponse.team;
+    
+    // Process the response for this bot in a separate thread
+    std::thread([sender, message, currentResponder, chatType, team]() {
+        std::string response = QueryLLM(message, sender->GetName(), currentResponder->GetName());
+        
+        if (!response.empty()) {
+            // Add the response prefix if configured
+            if (!LLM_Config.ResponsePrefix.empty()) {
+                response = LLM_Config.ResponsePrefix + response;
+            }
+
+            // Schedule the response with increasing delay based on response number
+            uint32 baseDelay = 2000;  // 2 seconds base delay
+            uint32 delay = baseDelay + (urand(0, 1500));  // Add random delay up to 1.5s
+            
+            // Create the event
+            BotResponseEvent* event = new BotResponseEvent(
+                currentResponder, 
+                sender, 
+                response, 
+                chatType, 
+                message, 
+                team,
+                LLM_Config.Performance.Delays.Pacified
+            );
+
+            // Add the event to the responder's event queue
+            if (currentResponder && currentResponder->IsInWorld()) {
+                currentResponder->m_Events.AddEvent(event, 
+                    currentResponder->m_Events.CalculateTime(delay));
+            } else {
+                delete event;
+            }
+        }
+
+        // Increment the responses generated count and decrement active threads
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            if (!responseQueue.empty()) {
+                responseQueue.front().responsesGenerated++;
+            }
+            g_activeThreads--;
+        }
+    }).detach();
 }
 
 // Logger class definition
@@ -723,7 +925,7 @@ struct Personality {
     std::string prompt;
     std::vector<std::string> emotions;
     nlohmann::json traits;
-    std::vector<std::string> interests;
+    std::vector<std::string> knowledge_base;
     nlohmann::json chat_style;
 };
 
@@ -743,7 +945,27 @@ bool LoadPersonalities(std::string const& filename) {
 
         json data = json::parse(file);
         g_personalities.clear();
-        g_personalities = data.get<std::vector<Personality>>();
+        
+        if (data.contains("personalities") && data["personalities"].is_array()) {
+            for (const auto& item : data["personalities"]) {
+                try {
+                    Personality personality;
+                    personality.id = item["id"].get<std::string>();
+                    personality.name = item["name"].get<std::string>();
+                    personality.prompt = item["prompt"].get<std::string>();
+                    personality.emotions = item["emotions"].get<std::vector<std::string>>();
+                    personality.traits = item["traits"];
+                    personality.knowledge_base = item["knowledge_base"].get<std::vector<std::string>>();
+                    personality.chat_style = item["chat_style"];
+                    g_personalities.push_back(personality);
+                }
+                catch (const std::exception& e) {
+                    LLMChatLogger::LogError(Acore::StringFormat(
+                        "Error parsing personality: {}", e.what()));
+                    continue;
+                }
+            }
+        }
 
         LLMChatLogger::Log(2, Acore::StringFormat(
             "Loaded {} personalities from {}", 
@@ -1028,96 +1250,6 @@ void UpdateCooldowns(Player* bot) {
     lastGlobalResponse = currentTime;
 }
 
-// Modify ProcessResponseQueue to not use 'this'
-void ProcessResponseQueue() {
-    std::lock_guard<std::mutex> lock(queueMutex);
-    uint32 currentTime = getMSTime();
-
-    // Don't process if we have too many active threads
-    if (g_activeApiCalls >= LLM_Config.Performance.Threading.MaxThreads) {
-        LOG_DEBUG("module.llm_chat", "Max concurrent threads reached ({}), waiting...", 
-            LLM_Config.Performance.Threading.MaxThreads);
-        return;
-    }
-
-    if (responseQueue.empty()) {
-        return;
-    }
-
-    // Only process the front of the queue
-    QueuedResponse& queuedResponse = responseQueue.front();
-        
-    // Check if response has timed out
-    if (currentTime - queuedResponse.timestamp > (LLM_Config.Queue.Timeout * 1000)) {
-        LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}s", 
-            queuedResponse.sender->GetName(), LLM_Config.Queue.Timeout);
-        responseQueue.pop();
-        return;
-    }
-
-    // Get next responder
-    if (queuedResponse.responsesGenerated >= queuedResponse.maxResponses || 
-        queuedResponse.responsesGenerated >= queuedResponse.responders.size()) {
-        responseQueue.pop();
-        return;
-    }
-
-    Player* currentResponder = queuedResponse.responders[queuedResponse.responsesGenerated];
-    
-    // Increment active threads before starting new one
-    activeThreads++;
-    
-    // Create a copy of the necessary data for the thread
-    Player* sender = queuedResponse.sender;
-    std::string message = queuedResponse.message;
-    uint32 chatType = queuedResponse.chatType;
-    TeamId team = queuedResponse.team;
-    
-    // Process the response for this bot in a separate thread
-    std::thread([sender, message, currentResponder, chatType, team]() {
-        std::string response = QueryLLM(message, sender->GetName(), currentResponder->GetName());
-        
-        if (!response.empty()) {
-            // Add the response prefix if configured
-            if (!LLM_Config.ResponsePrefix.empty()) {
-                response = LLM_Config.ResponsePrefix + response;
-            }
-
-            // Schedule the response with increasing delay based on response number
-            uint32 baseDelay = 2000;  // 2 seconds base delay
-            uint32 delay = baseDelay + (urand(0, 1500));  // Add random delay up to 1.5s
-            
-            // Create the event
-            BotResponseEvent* event = new BotResponseEvent(
-                currentResponder, 
-                sender, 
-                response, 
-                chatType, 
-                message, 
-                team,
-                LLM_Config.Performance.Delays.Pacified
-            );
-
-            // Add the event to the responder's event queue
-            if (currentResponder && currentResponder->IsInWorld()) {
-                currentResponder->m_Events.AddEvent(event, 
-                    currentResponder->m_Events.CalculateTime(delay));
-            } else {
-                delete event;
-            }
-        }
-
-        // Increment the responses generated count and decrement active threads
-        {
-            std::lock_guard<std::mutex> lock(queueMutex);
-            if (!responseQueue.empty()) {
-                responseQueue.front().responsesGenerated++;
-            }
-            activeThreads--;
-        }
-    }).detach();
-}
-
 // Add to SendAIResponse before processing
 bool CanProcessMessage(Player* sender) {
     if (!sender)
@@ -1390,6 +1522,21 @@ public:
             // Personality System
             LLM_Config.PersonalityFile = sConfigMgr->GetOption<std::string>("LLMChat.PersonalityFile", "mod_llm_chat/conf/personalities.json");
 
+            // Database Settings
+            LLM_Config.Database.CharacterDB = sConfigMgr->GetOption<std::string>("LLMChat.Database.Character", "characters");
+            LLM_Config.Database.WorldDB = sConfigMgr->GetOption<std::string>("LLMChat.Database.World", "world");
+            LLM_Config.Database.AuthDB = sConfigMgr->GetOption<std::string>("LLMChat.Database.Auth", "auth");
+            LLM_Config.Database.CustomDB = sConfigMgr->GetOption<std::string>("LLMChat.Database.Custom", "LLMDB");
+
+            // Log database configuration if debug level
+            if (LLM_Config.LogLevel >= 3) {
+                LLMChatLogger::LogDebug("=== Database Configuration ===");
+                LLMChatLogger::LogDebug(Acore::StringFormat("Character DB: {}", LLM_Config.Database.CharacterDB));
+                LLMChatLogger::LogDebug(Acore::StringFormat("World DB: {}", LLM_Config.Database.WorldDB));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Auth DB: {}", LLM_Config.Database.AuthDB));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Custom DB: {}", LLM_Config.Database.CustomDB));
+            }
+
             // Log configuration if debug level
             if (LLM_Config.LogLevel >= 3) {
                 LogConfiguration();
@@ -1592,4 +1739,20 @@ void Add_LLMChatScripts()
     new LLMChatAnnounce();
     new LLMChatConfig();
     new LLMChatPlayerScript();
+} 
+
+void LoadConfig()
+{
+    if (!sConfigMgr->LoadModulesConfig("mod_llm_chat.conf")) {
+        LOG_ERROR("module", "LLM Chat: Failed to load configuration.");
+        return;
+    }
+
+    // Load personalities
+    std::string personalitiesFile = sConfigMgr->GetStringDefault("LLMChat.PersonalitiesFile", "conf/personalities.json");
+    if (!LLMChatPersonality::LoadPersonalities(personalitiesFile)) {
+        LOG_ERROR("module", "LLM Chat: Failed to load personalities from %s", personalitiesFile.c_str());
+    }
+
+    // ... rest of config loading ...
 } 

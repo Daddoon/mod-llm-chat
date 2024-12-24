@@ -3,5 +3,6 @@
 		"xstring": "cpp",
 		"chrono": "cpp",
 		"xlocinfo": "cpp"
-	}
+	},
+	"C_Cpp.errorSquiggles": "enabled"
 }

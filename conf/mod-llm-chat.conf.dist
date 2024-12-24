@@ -1,7 +1,28 @@
 # LLM Chat Module Configuration
+
 ###################################################################################################
+# SECTION 1: Database Settings
+###################################################################################################
+
 #
-# SECTION 1: Core Settings
+#    LLMChat.Database
+#        Description: Database names used by the module
+#        Default:     Standard AzerothCore database names
+#        Note:        Adjust these if your database names differ from the defaults
+#                    The Playerbots database is used to fetch additional bot-specific information
+#                    The LLMDB database stores persistent bot personalities, backstories,
+#                    conversation history, and other LLM-specific data to maintain consistent
+#                    character traits and behaviors across sessions
+#
+
+LLMChat.Database.Character = "acore_characters"
+LLMChat.Database.World = "acore_world"
+LLMChat.Database.Auth = "acore_auth"
+LLMChat.Database.Playerbots = "acore_playerbots"
+LLMChat.Database.LLMDB = "LLMDB"
+
+###################################################################################################
+# SECTION 2: Core Settings
 ###################################################################################################
 
 #
@@ -35,7 +56,7 @@ LLMChat.LogLevel = 3
 LLMChat.Announce = 1
 
 ###################################################################################################
-# SECTION 2: LLM Provider Settings
+# SECTION 3: LLM Provider Settings
 ###################################################################################################
 
 #
@@ -197,7 +218,7 @@ LLMChat.ApiKey = ""
 LLMChat.ApiSecret = ""
 
 ###################################################################################################
-# SECTION 3: Chat Behavior Settings
+# SECTION 4: Chat Behavior Settings
 ###################################################################################################
 
 #
@@ -233,7 +254,7 @@ LLMChat.MaxResponsesPerMessage = 1
 LLMChat.ResponseChance = 30
 
 ###################################################################################################
-# SECTION 4: Performance & Rate Limiting
+# SECTION 5: Performance & Rate Limiting
 ###################################################################################################
 
 #
@@ -293,7 +314,7 @@ LLMChat.Performance.ResponseDelay.Max = 1500
 LLMChat.Performance.BotPacifiedDuration = 5000
 
 ###################################################################################################
-# SECTION 5: Queue Settings
+# SECTION 6: Queue Settings
 ###################################################################################################
 
 #
@@ -307,7 +328,7 @@ LLMChat.Queue.Size = 25
 LLMChat.Queue.Timeout = 180
 
 ###################################################################################################
-# SECTION 6: LLM Parameters
+# SECTION 7: LLM Parameters
 ###################################################################################################
 
 #
@@ -327,7 +348,7 @@ LLMChat.LLM.ContextSize = 4096
 LLMChat.LLM.RepeatPenalty = 1.2
 
 ###################################################################################################
-# SECTION 7: Memory System
+# SECTION 8: Memory System
 ###################################################################################################
 
 #
@@ -345,7 +366,7 @@ LLMChat.Memory.ExpirationTime = 3600
 LLMChat.Memory.MaxContextLength = 2000
 
 ###################################################################################################
-# SECTION 8: Personality System
+# SECTION 9: Personality System
 ###################################################################################################
 
 #

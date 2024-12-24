@@ -7,6 +7,9 @@
 // Static member initialization
 std::vector<Personality> LLMChatPersonality::g_personalities;
 nlohmann::json LLMChatPersonality::g_emotion_types;
+nlohmann::json LLMChatPersonality::g_faction_data;
+nlohmann::json LLMChatPersonality::g_race_data;
+nlohmann::json LLMChatPersonality::g_class_data;
 
 bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
     try {
@@ -22,15 +25,26 @@ bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
         // Load personalities
         if (data.contains("personalities")) {
             for (const auto& item : data["personalities"]) {
-                Personality personality;
                 try {
+                    Personality personality;
                     personality.id = item["id"].get<std::string>();
                     personality.name = item["name"].get<std::string>();
                     personality.prompt = item["prompt"].get<std::string>();
+                    personality.base_context = item["base_context"].get<std::string>();
                     personality.emotions = item["emotions"].get<std::vector<std::string>>();
                     personality.traits = item["traits"];
-                    personality.interests = item["interests"].get<std::vector<std::string>>();
+                    personality.knowledge_base = item["knowledge_base"].get<std::vector<std::string>>();
                     personality.chat_style = item["chat_style"];
+                    personality.response_patterns = item["response_patterns"];
+                    
+                    // Optional fields
+                    if (item.contains("faction_responses"))
+                        personality.faction_responses = item["faction_responses"];
+                    if (item.contains("race_responses"))
+                        personality.race_responses = item["race_responses"];
+                    if (item.contains("class_responses"))
+                        personality.class_responses = item["class_responses"];
+                    
                     g_personalities.push_back(personality);
                 }
                 catch (const std::exception& e) {
@@ -43,6 +57,17 @@ bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
         // Load emotion types
         if (data.contains("emotion_types")) {
             g_emotion_types = data["emotion_types"];
+        }
+
+        // Load interaction rules
+        if (data.contains("interaction_rules")) {
+            auto rules = data["interaction_rules"];
+            if (rules.contains("faction_specific"))
+                g_faction_data = rules["faction_specific"];
+            if (rules.contains("race_specific"))
+                g_race_data = rules["race_specific"];
+            if (rules.contains("class_specific"))
+                g_class_data = rules["class_specific"];
         }
 
         LLMChatLogger::Log(2, "Loaded " + std::to_string(g_personalities.size()) + 
@@ -197,7 +222,7 @@ CharacterDetails LLMChatPersonality::GetCharacterDetails(Player* player) {
     details.faction = GetFactionName(player->GetTeamId());
     details.race = GetRaceName(player->getRace());
     details.class_type = GetClassName(player->getClass());
-    details.level = player->getLevel();
+    details.level = player->GetLevel();
     details.guild = GetGuildInfo(player);
     details.title = GetCharacterTitle(player);
     details.current_zone = GetZoneName(player->GetZoneId());
@@ -277,8 +302,10 @@ std::string LLMChatPersonality::GetCharacterTitle(Player* player) {
     if (!player)
         return "";
 
-    if (CharTitlesEntry const* titleEntry = player->GetTitle())
-        return titleEntry->name[0];
+    // Get the player's chosen title ID
+    uint32 titleId = player->GetUInt32Value(PLAYER_CHOSEN_TITLE);
+    if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId))
+        return titleEntry->nameMale[0];
     return "";
 }
 
@@ -293,8 +320,9 @@ std::string LLMChatPersonality::GetGuildInfo(Player* player) {
 
 bool LLMChatPersonality::LoadRPProfile(CharacterDetails& details, std::string const& character_name) {
     // Query custom RP profile table if it exists
-    QueryResult result = CharacterDatabase.PQuery(
-        "SELECT rp_profile, character_history FROM character_rp_profiles WHERE name = '%s'",
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT rp_profile, character_history FROM `%s`.character_rp_profiles WHERE name = '%s'",
+        LLM_Config.Database.CustomDB.c_str(),
         character_name.c_str());
 
     if (result) {
@@ -307,8 +335,9 @@ bool LLMChatPersonality::LoadRPProfile(CharacterDetails& details, std::string co
 }
 
 void LLMChatPersonality::SaveRPProfile(const CharacterDetails& details) {
-    CharacterDatabase.PExecute(
-        "REPLACE INTO character_rp_profiles (name, rp_profile, character_history) VALUES ('%s', '%s', '%s')",
+    CharacterDatabase.Query(
+        "REPLACE INTO `%s`.character_rp_profiles (name, rp_profile, character_history) VALUES ('%s', '%s', '%s')",
+        LLM_Config.Database.CustomDB.c_str(),
         details.name.c_str(),
         details.rp_profile.c_str(),
         details.character_history.c_str());
@@ -316,8 +345,9 @@ void LLMChatPersonality::SaveRPProfile(const CharacterDetails& details) {
 
 CharacterDetails LLMChatPersonality::QueryCharacterFromDB(std::string const& name) {
     CharacterDetails details;
-    QueryResult result = CharacterDatabase.PQuery(
-        "SELECT race, class, level, zone FROM characters WHERE name = '%s'",
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT race, class, level, zone FROM `%s`.characters WHERE name = '%s'",
+        LLM_Config.Database.CharacterDB.c_str(),
         name.c_str());
 
     if (result) {
@@ -333,8 +363,9 @@ CharacterDetails LLMChatPersonality::QueryCharacterFromDB(std::string const& nam
 
 bool LLMChatPersonality::LoadCharacterAchievements(CharacterDetails& details, uint32 guid) {
     // Query character_achievement table for notable achievements
-    QueryResult result = CharacterDatabase.PQuery(
-        "SELECT achievement FROM character_achievement WHERE guid = %u ORDER BY date DESC LIMIT 5",
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT achievement FROM `%s`.character_achievement WHERE guid = %u ORDER BY date DESC LIMIT 5",
+        LLM_Config.Database.CharacterDB.c_str(),
         guid);
 
     if (result) {
@@ -358,8 +389,9 @@ bool LLMChatPersonality::LoadCharacterAchievements(CharacterDetails& details, ui
 bool LLMChatPersonality::LoadCharacterHistory(CharacterDetails& details, uint32 guid) {
     // This could be expanded to include more character history data
     // For now, we'll just check if they're a veteran player
-    QueryResult result = CharacterDatabase.PQuery(
-        "SELECT COUNT(*) FROM character_achievement WHERE guid = %u",
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT COUNT(*) FROM `%s`.character_achievement WHERE guid = %u",
+        LLM_Config.Database.CharacterDB.c_str(),
         guid);
 
     if (result) {

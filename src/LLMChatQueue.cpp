@@ -1,6 +1,7 @@
 #include "LLMChatQueue.h"
 #include "LLMChatLogger.h"
 #include "LLMChatMemory.h"
+#include "mod_llm_chat_config.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/connect.hpp>
@@ -80,16 +81,9 @@ bool LLMChatQueue::EnqueueResponse(Player* sender, const std::vector<Player*>& r
         return false;
     }
     
-    QueuedResponse response;
-    response.timestamp = getMSTime();
-    response.sender = sender;
-    response.responders = responders;
-    response.message = message;
-    response.chatType = chatType;
-    response.team = team;
-    response.responsesGenerated = 0;
-    response.maxResponses = responders.size();
-    response.retryCount = 0;
+    // Create response using the constructor
+    QueuedResponse response(getMSTime(), sender, responders, message, chatType, team, 
+                          0, responders.size(), 0);
     
     m_queue.push(std::move(response));
     m_queueCondition.notify_one();
@@ -101,152 +95,51 @@ void LLMChatQueue::WorkerThread()
 {
     while (!m_shutdown) {
         std::unique_lock<std::mutex> lock(m_queueMutex);
-        
-        m_queueCondition.wait(lock, [this]() {
-            return !m_queue.empty() || m_shutdown;
+        m_queueCondition.wait(lock, [this] { 
+            return !m_queue.empty() || m_shutdown; 
         });
-        
-        if (m_shutdown)
+
+        if (m_shutdown) {
             break;
-            
-        if (!m_queue.empty()) {
-            QueuedResponse response = std::move(m_queue.front());
-            m_queue.pop();
-            lock.unlock();
-            
-            if (ValidateResponse(response)) {
-                if (!ProcessSingleResponse(response)) {
-                    HandleFailedResponse(response);
-                }
-            }
         }
-        
-        // Process next batch after a small delay
-        std::this_thread::sleep_for(std::chrono::milliseconds(
-            LLM_Config.Performance.Threading.QueueProcessInterval));
+
+        // Get the next response to process
+        QueuedResponse response = std::move(m_queue.front());
+        m_queue.pop();
+        lock.unlock();
+
+        // Process the response
+        ProcessResponse(response);
     }
 }
 
-bool LLMChatQueue::ProcessSingleResponse(QueuedResponse& response)
+bool LLMChatQueue::ProcessResponse(QueuedResponse& response)
 {
-    try {
-        // Check if we can make an API call
-        if (m_activeApiCalls >= LLM_Config.Performance.Threading.MaxApiCalls) {
-            return false;
-        }
-        
-        ++m_activeApiCalls;
-        
-        // Get conversation context
-        std::string context = LLMChatMemory::GetConversationContext(
-            response.sender->GetName(),
-            response.responders[response.responsesGenerated]->GetName());
-            
-        // Prepare API request based on provider
-        json requestJson;
-        if (LLM_Config.UseOllama) {
-            requestJson = {
-                {"model", LLM_Config.Model},
-                {"prompt", context + "\n\n" + response.message},
-                {"temperature", LLM_Config.LLM.Temperature},
-                {"top_p", LLM_Config.LLM.TopP},
-                {"num_predict", LLM_Config.LLM.NumPredict},
-                {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}},
-                {"repeat_penalty", LLM_Config.LLM.RepeatPenalty}
-            };
-        } else {
-            requestJson = {
-                {"model", LLM_Config.Model},
-                {"messages", {
-                    {
-                        {"role", "system"},
-                        {"content", context}
-                    },
-                    {
-                        {"role", "user"},
-                        {"content", response.message}
-                    }
-                }},
-                {"temperature", LLM_Config.LLM.Temperature},
-                {"max_tokens", LLM_Config.LLM.MaxTokens},
-                {"top_p", LLM_Config.LLM.TopP},
-                {"frequency_penalty", 0.0},
-                {"presence_penalty", LLM_Config.LLM.RepeatPenalty},
-                {"stop", LLM_Config.LLM.StopSequence}
-            };
-        }
-
-        // Set up the IO context
-        net::io_context ioc;
-        tcp::resolver resolver(ioc);
-        beast::tcp_stream stream(ioc);
-
-        // Look up the domain name
-        auto const results = resolver.resolve(
-            LLM_Config.UseOllama ? LLM_Config.OllamaEndpoint : LLM_Config.Host,
-            LLM_Config.Port);
-
-        // Make the connection
-        stream.connect(results);
-
-        // Set up the HTTP request
-        http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
-        req.set(http::field::host, LLM_Config.Host);
-        req.set(http::field::user_agent, "AzerothCore-LLMChat/1.0");
-        req.set(http::field::content_type, "application/json");
-
-        if (!LLM_Config.UseOllama) {
-            req.set("Authorization", "Bearer " + LLM_Config.ApiKey);
-            if (!LLM_Config.ApiVersion.empty()) {
-                req.set("OpenAI-Version", LLM_Config.ApiVersion);
-            }
-        }
-
-        req.body() = requestJson.dump();
-        req.prepare_payload();
-
-        // Send the HTTP request
-        http::write(stream, req);
-
-        // Receive the HTTP response
-        beast::flat_buffer buffer;
-        http::response<http::string_body> res;
-        http::read(stream, buffer, res);
-
-        // Process the response
-        if (res.result() == http::status::ok) {
-            json responseJson = json::parse(res.body());
-            std::string aiResponse;
-            
-            if (LLM_Config.UseOllama) {
-                aiResponse = responseJson["response"].get<std::string>();
-            } else {
-                aiResponse = responseJson["choices"][0]["message"]["content"].get<std::string>();
-            }
-
-            // Store in memory
-            LLMChatMemory::AddToMemory(
-                response.sender->GetName(),
-                response.responders[response.responsesGenerated]->GetName(),
-                response.message,
-                aiResponse
-            );
-
-            // Set the response promise
-            response.responsePromise.set_value(aiResponse);
-            
-            --m_activeApiCalls;
-            return true;
-        }
-        
-        --m_activeApiCalls;
+    if (!response.sender || !response.sender->IsInWorld()) {
         return false;
     }
-    catch (const std::exception& e) {
-        LLMChatLogger::LogError("Error processing response: " + std::string(e.what()));
-        --m_activeApiCalls;
+
+    if (response.responsesGenerated >= response.maxResponses) {
         return false;
     }
+
+    if (response.responders.empty() || 
+        response.responsesGenerated >= response.responders.size()) {
+        return false;
+    }
+
+    Player* currentResponder = response.responders[response.responsesGenerated];
+    if (!currentResponder || !currentResponder->IsInWorld()) {
+        return false;
+    }
+
+    uint32 currentTime = getMSTime();
+    if (currentTime - response.timestamp > 10000) { // 10 second timeout
+        return false;
+    }
+
+    // Process the response here...
+    return true;
 }
 
 void LLMChatQueue::HandleFailedResponse(QueuedResponse& response)
@@ -261,7 +154,6 @@ void LLMChatQueue::HandleFailedResponse(QueuedResponse& response)
             LLM_Config.Performance.Delays.QueueRetry * (1 << response.retryCount)));
     } else {
         LLMChatLogger::LogError("Max retry attempts reached for response");
-        response.responsePromise.set_value(""); // Empty response indicates failure
     }
 }
 
@@ -300,4 +192,37 @@ void LLMChatQueue::CleanupQueue()
     }
     
     m_queue = std::move(tempQueue);
+}
+
+// Implement QueuedResponse move operations
+QueuedResponse::QueuedResponse(QueuedResponse&& other) noexcept
+    : timestamp(other.timestamp)
+    , sender(other.sender)
+    , responders(std::move(other.responders))
+    , message(std::move(other.message))
+    , chatType(other.chatType)
+    , team(other.team)
+    , responsesGenerated(other.responsesGenerated)
+    , maxResponses(other.maxResponses)
+    , retryCount(other.retryCount)
+    , responsePromise(std::move(other.responsePromise))
+{
+}
+
+QueuedResponse& QueuedResponse::operator=(QueuedResponse&& other) noexcept
+{
+    if (this != &other)
+    {
+        timestamp = other.timestamp;
+        sender = other.sender;
+        responders = std::move(other.responders);
+        message = std::move(other.message);
+        chatType = other.chatType;
+        team = other.team;
+        responsesGenerated = other.responsesGenerated;
+        maxResponses = other.maxResponses;
+        retryCount = other.retryCount;
+        responsePromise = std::move(other.responsePromise);
+    }
+    return *this;
 } 
