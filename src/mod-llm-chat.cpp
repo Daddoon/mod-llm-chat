@@ -213,7 +213,7 @@ void WorkerThread() {
                 // Check if response has timed out
                 uint32 currentTime = getMSTime();
             if (currentTime - queuedResponse.timestamp > RESPONSE_TIMEOUT) {
-                    LOG_DEBUG("module.llm_chat", "Response timed out for %s after %dms", 
+                    LOG_DEBUG("module.llm_chat", "Response timed out for {} after {}", 
                     queuedResponse.sender ? queuedResponse.sender->GetName() : "Unknown", 
                     LLM_Config.Queue.Timeout);
                     responseQueue.pop();
@@ -231,7 +231,7 @@ void WorkerThread() {
                 
             // Debug log to see if we're getting here
             LLMChatLogger::Log(1, Acore::StringFormat(
-                "WorkerThread processing request - Sender: %s, Bot: %s, Message: %s", 
+                "WorkerThread processing request - Sender: {}, Bot: {}, Message: {}", 
                 queuedResponse.sender ? queuedResponse.sender->GetName() : "Unknown",
                 currentResponder ? currentResponder->GetName() : "Unknown",
                 queuedResponse.message.c_str()));
@@ -244,7 +244,7 @@ void WorkerThread() {
 
                 // Debug log the connection attempt
                 LLMChatLogger::Log(1, Acore::StringFormat(
-                    "Attempting Ollama connection - Host: %s, Port: %s, Target: %s", 
+                    "Attempting Ollama connection - Host: {}, Port: {}, Target: {}", 
                     LLM_Config.Host.c_str(), LLM_Config.Port.c_str(), LLM_Config.Target.c_str()));
 
                 auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
@@ -259,12 +259,12 @@ void WorkerThread() {
                 nlohmann::json request_body = {
                     {"model", LLM_Config.Model},
                     {"prompt", Acore::StringFormat(
-                        "You are a character named %s in World of Warcraft.\n"
-                        "Current location: %s (Map: %d, Zone: %d)\n"
-                        "Your level: %d, Class: %s, Race: %s\n"
-                        "Nearby players: %d\n"
-                        "Combat state: %s\n"
-                        "\nRespond to this message from %s (Level %d %s %s): %s\n"
+                        "You are a character named {} in World of Warcraft.\n"
+                        "Current location: {} (Map: {}, Zone: {})\n"
+                        "Your level: {}, Class: {}, Race: {}\n"
+                        "Nearby players: {}\n"
+                        "Combat state: {}\n"
+                        "\nRespond to this message from {} (Level {} {} {}): {}\n"
                         "\nKeep your response in character and relevant to World of Warcraft lore.",
                         currentResponder->GetName(),
                         (sAreaTableStore.LookupEntry(currentResponder->GetZoneId()) ? sAreaTableStore.LookupEntry(currentResponder->GetZoneId())->area_name[0] : "Unknown Zone"),
@@ -284,7 +284,7 @@ void WorkerThread() {
                 };
 
                 std::string request_str = request_body.dump();
-                LLMChatLogger::Log(1, Acore::StringFormat("Sending Ollama request: %s", request_str.c_str()));
+                LLMChatLogger::Log(1, Acore::StringFormat("Sending Ollama request: {}", request_str.c_str()));
 
                 req.body() = request_str;
                 req.prepare_payload();
@@ -299,7 +299,7 @@ void WorkerThread() {
                 http::read(stream, buffer, res);
 
                 LLMChatLogger::Log(1, Acore::StringFormat(
-                    "Ollama API Response - Status: %d, Body: %s", 
+                    "Ollama API Response - Status: {}, Body: {}", 
                     res.result_int(), res.body().c_str()));
 
                 // Parse the response
@@ -334,14 +334,14 @@ void WorkerThread() {
                     }
                 } catch (const json::parse_error& e) {
                     LLMChatLogger::LogError(Acore::StringFormat(
-                        "Failed to parse Ollama response: %s", e.what()));
+                        "Failed to parse Ollama response: {}", e.what()));
                 }
 
                 // Increment the responses generated count
                 queuedResponse.responsesGenerated++;
             } catch (const std::exception& e) {
                 LLMChatLogger::LogError(Acore::StringFormat(
-                    "Error making Ollama API request: %s", e.what()));
+                    "Error making Ollama API request: {}", e.what()));
             }
         }
 
@@ -544,14 +544,14 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
     try {
         size_t protocolEnd = endpoint.find("://");
         if (protocolEnd == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no protocol): %s", endpoint.c_str());
+            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no protocol): {}", endpoint.c_str());
             return;
         }
 
         std::string url = endpoint.substr(protocolEnd + 3);
         size_t pathStart = url.find('/');
         if (pathStart == std::string::npos) {
-            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no path): %s", endpoint.c_str());
+            LOG_ERROR("module.llm_chat", "Invalid endpoint URL (no path): {}", endpoint.c_str());
             return;
         }
 
@@ -567,11 +567,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             try {
                 int port = std::stoi(config.Port);
                 if (port <= 0 || port > 65535) {
-                    LOG_ERROR("module.llm_chat", "Invalid port number: %s", config.Port.c_str());
+                    LOG_ERROR("module.llm_chat", "Invalid port number: {}", config.Port.c_str());
                     config.Port = "11434"; // Default to Ollama port
                 }
             } catch (std::exception const& e) {
-                LOG_ERROR("module.llm_chat", "Invalid port format: %s", e.what());
+                LOG_ERROR("module.llm_chat", "Invalid port format: {}", e.what());
                 config.Port = "11434"; // Default to Ollama port
             }
         } else {
@@ -579,11 +579,11 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
             config.Port = "11434"; // Default to Ollama port
         }
 
-        LOG_INFO("module.llm_chat", "URL parsed successfully - Host: %s, Port: %s, Target: %s", 
+        LOG_INFO("module.llm_chat", "URL parsed successfully - Host: {}, Port: {}, Target: {}", 
                 config.Host.c_str(), config.Port.c_str(), config.Target.c_str());
     }
     catch (std::exception const& e) {
-        LOG_ERROR("module.llm_chat", "Error parsing URL: %s", e.what());
+        LOG_ERROR("module.llm_chat", "Error parsing URL: {}", e.what());
         // Set defaults
         config.Host = "localhost";
         config.Port = "11434";
@@ -594,14 +594,14 @@ void ParseEndpointURL(std::string const& endpoint, LLMConfig& config)
 std::string ParseLLMResponse(const std::string& rawResponse)
 {
     try {
-        LOG_DEBUG("module.llm_chat", "Parsing raw response: %s", rawResponse.c_str());
+        LOG_DEBUG("module.llm_chat", "Parsing raw response: {}", rawResponse.c_str());
         
         json response_json = json::parse(rawResponse);
         
         // Check for Ollama format
         if (response_json.contains("response")) {
             std::string response = response_json["response"].get<std::string>();
-            LOG_DEBUG("module.llm_chat", "Parsed Ollama response: %s", response.c_str());
+            LOG_DEBUG("module.llm_chat", "Parsed Ollama response: {}", response.c_str());
             return response;
         }
         
@@ -610,7 +610,7 @@ std::string ParseLLMResponse(const std::string& rawResponse)
             if (response_json["choices"][0].contains("message") && 
                 response_json["choices"][0]["message"].contains("content")) {
                 std::string response = response_json["choices"][0]["message"]["content"].get<std::string>();
-                LOG_DEBUG("module.llm_chat", "Parsed OpenAI response: %s", response.c_str());
+                LOG_DEBUG("module.llm_chat", "Parsed OpenAI response: {}", response.c_str());
             return response;
             }
         }
@@ -619,11 +619,11 @@ std::string ParseLLMResponse(const std::string& rawResponse)
         return "Error: Invalid response format";
     }
     catch (const json::parse_error& e) {
-        LOG_ERROR("module.llm_chat", "JSON parse error: %s", e.what());
+        LOG_ERROR("module.llm_chat", "JSON parse error: {}", e.what());
         return "Error: Failed to parse response";
     }
     catch (const std::exception& e) {
-        LOG_ERROR("module.llm_chat", "Error parsing response: %s", e.what());
+        LOG_ERROR("module.llm_chat", "Error parsing response: {}", e.what());
         return "Error: Failed to process response";
     }
 }
@@ -708,7 +708,7 @@ bool LoadPersonalities(std::string const& filename) {
         std::ifstream file(filename);
         if (!file.is_open()) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Failed to open personality file: %s", filename.c_str()));
+                "Failed to open personality file: {}", filename.c_str()));
             return false;
         }
 
@@ -741,20 +741,20 @@ bool LoadPersonalities(std::string const& filename) {
                 }
                 catch (const std::exception& e) {
                     LLMChatLogger::LogError(Acore::StringFormat(
-                        "Error parsing personality: %s", e.what()));
+                        "Error parsing personality: {}", e.what()));
                     continue;
                 }
             }
         }
 
         LLMChatLogger::Log(2, Acore::StringFormat(
-            "Loaded %zu personalities from %s", 
+            "Loaded {} personalities from {}", 
             g_personalities.size(), filename.c_str()));
         return true;
     }
     catch (const std::exception& e) {
         LLMChatLogger::LogError(Acore::StringFormat(
-            "Error loading personalities: %s", e.what()));
+            "Error loading personalities: {}", e.what()));
         return false;
     }
 }
@@ -814,7 +814,7 @@ std::string DetectEmotion(const std::string& message) {
         }
     }
 
-    LOG_DEBUG("module.llm_chat", "Detected emotion '%s' for message: %s", 
+    LOG_DEBUG("module.llm_chat", "Detected emotion '{}' for message: {}", 
         dominantEmotion.c_str(), message.c_str());
     return dominantEmotion;
 }
@@ -829,7 +829,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
     // Check active API calls
     if (g_activeApiCalls >= LLM_Config.Performance.Threading.MaxApiCalls) {
         LLMChatLogger::LogError(Acore::StringFormat(
-            "Too many active API calls (%d), skipping request", 
+            "Too many active API calls ({}), skipping request", 
             g_activeApiCalls.load()));
         return "";
     }
@@ -858,7 +858,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                 Personality personality = SelectPersonality(emotion);
                 
                 LLMChatLogger::LogDebug(Acore::StringFormat(
-                    "Detected emotion: %s, Selected personality: %s", 
+                    "Detected emotion: {}, Selected personality: {}", 
                     emotion.c_str(), personality.name.c_str()));
 
                 // Create context with selected personality and conversation history
@@ -876,7 +876,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                     "- If referring to the player, use their name: " + senderName + "\n\n"
                     "Chat naturally with " + senderName + " about: " + message;
 
-                LLMChatLogger::LogDebug(Acore::StringFormat("Context prompt: %s", contextPrompt.c_str()));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Context prompt: {}", contextPrompt.c_str()));
 
                 // Create the request payload using OpenAI format
         json requestJson = {
@@ -908,7 +908,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
         // Look up the domain name
         auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
                 LLMChatLogger::LogDebug(Acore::StringFormat(
-                    "Attempting to connect to %s:%s", 
+                    "Attempting to connect to {}:{}", 
                     LLM_Config.Host.c_str(), LLM_Config.Port.c_str()));
 
                 // Make the connection with timeout
@@ -976,7 +976,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                 responsePromise.set_value(response);
             }
             catch (const std::exception& e) {
-                LLMChatLogger::LogError(Acore::StringFormat("API thread error: %s", e.what()));
+                LLMChatLogger::LogError(Acore::StringFormat("API thread error: {}", e.what()));
                 responsePromise.set_value("");
             }
             
@@ -997,7 +997,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
         return responseFuture.get();
     }
     catch (const std::exception& e) {
-        LLMChatLogger::LogError(Acore::StringFormat("QueryLLM error: %s", e.what()));
+        LLMChatLogger::LogError(Acore::StringFormat("QueryLLM error: {}", e.what()));
         --g_activeApiCalls;
         return "";
     }
@@ -1061,7 +1061,7 @@ bool CanProcessMessage(Player* sender) {
 
     if (playerLastMessage.count(sender->GetGUID()) > 0) {
         if (currentTime - playerLastMessage[sender->GetGUID()] < LLM_Config.Performance.Cooldowns.Player) {
-            LOG_DEBUG("module.llm_chat", "Player cooldown active for %s, skipping message", 
+            LOG_DEBUG("module.llm_chat", "Player cooldown active for {}, skipping message", 
                 sender->GetName());
             return false;
         }
@@ -1080,7 +1080,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
         }
 
         LLMChatLogger::Log(1, Acore::StringFormat(
-            "SendAIResponse called - Sender: %s, Message: %s, ChatType: %d", 
+            "SendAIResponse called - Sender: {}, Message: {}, ChatType: {}", 
             sender->GetName(), msg.c_str(), chatType));
 
         // Get nearby bots
@@ -1110,7 +1110,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                     // For say/yell, check distance
                     if (player->IsWithinDist(sender, searchRange)) {
                         LLMChatLogger::Log(1, Acore::StringFormat(
-                            "Found nearby bot: %s at distance %.2f", 
+                            "Found nearby bot: {} at distance %.2f", 
                             player->GetName(),
                             player->GetDistance(sender)));
                         nearbyBots.push_back(player);
@@ -1119,7 +1119,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
             });
 
         } catch (const std::exception& e) {
-            LLMChatLogger::LogError(Acore::StringFormat("Error finding nearby players: %s", e.what()));
+            LLMChatLogger::LogError(Acore::StringFormat("Error finding nearby players: {}", e.what()));
             return;
         }
 
@@ -1175,7 +1175,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
             queueCondition.notify_one();
         }
     } catch (const std::exception& e) {
-        LLMChatLogger::LogError(Acore::StringFormat("Error in SendAIResponse: %s", e.what()));
+        LLMChatLogger::LogError(Acore::StringFormat("Error in SendAIResponse: {}", e.what()));
     }
 }
 
@@ -1192,12 +1192,12 @@ public:
             }
 
             LLMChatLogger::Log(2, Acore::StringFormat(
-                "Player %s logging in - checking LLM Chat module status", 
+                "Player {} logging in - checking LLM Chat module status", 
                 player->GetName()));
 
             if (!LLM_Config.Enabled) {
                 LLMChatLogger::LogDebug(Acore::StringFormat(
-                    "LLM Chat module is disabled - skipping initialization for %s", 
+                    "LLM Chat module is disabled - skipping initialization for {}", 
                     player->GetName()));
                 return;
             }
@@ -1212,12 +1212,12 @@ public:
             }
 
             LLMChatLogger::Log(2, Acore::StringFormat(
-                "Player %s successfully initialized with LLM Chat module", 
+                "Player {} successfully initialized with LLM Chat module", 
                 player->GetName()));
         }
         catch (const std::exception& e) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Error during player login for %s: %s", 
+                "Error during player login for {}: {}", 
                 player->GetName(), e.what()));
         }
     }
@@ -1305,10 +1305,10 @@ public:
             // Log database configuration if debug level
             if (LLM_Config.LogLevel >= 3) {
                 LLMChatLogger::LogDebug("=== Database Configuration ===");
-                LLMChatLogger::LogDebug(Acore::StringFormat("Character DB: %s", LLM_Config.Database.CharacterDB.c_str()));
-                LLMChatLogger::LogDebug(Acore::StringFormat("World DB: %s", LLM_Config.Database.WorldDB.c_str()));
-                LLMChatLogger::LogDebug(Acore::StringFormat("Auth DB: %s", LLM_Config.Database.AuthDB.c_str()));
-                LLMChatLogger::LogDebug(Acore::StringFormat("Custom DB: %s", LLM_Config.Database.CustomDB.c_str()));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Character DB: {}", LLM_Config.Database.CharacterDB.c_str()));
+                LLMChatLogger::LogDebug(Acore::StringFormat("World DB: {}", LLM_Config.Database.WorldDB.c_str()));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Auth DB: {}", LLM_Config.Database.AuthDB.c_str()));
+                LLMChatLogger::LogDebug(Acore::StringFormat("Custom DB: {}", LLM_Config.Database.CustomDB.c_str()));
             }
 
             // Log configuration if debug level
@@ -1321,20 +1321,20 @@ public:
 private:
     void LogConfiguration() {
         LLMChatLogger::LogDebug("=== Detailed Configuration ===");
-        LLMChatLogger::LogDebug(Acore::StringFormat("Endpoint: %s", LLM_Config.Endpoint.c_str()));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Model: %s", LLM_Config.Model.c_str()));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Endpoint: {}", LLM_Config.Endpoint.c_str()));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Model: {}", LLM_Config.Model.c_str()));
         LLMChatLogger::LogDebug(Acore::StringFormat("Chat Range: %.2f", LLM_Config.ChatRange));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Max Responses Per Message: %d", LLM_Config.MaxResponsesPerMessage));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Response Chance: %d", LLM_Config.ResponseChance));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Max Responses Per Message: {}", LLM_Config.MaxResponsesPerMessage));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Response Chance: {}", LLM_Config.ResponseChance));
         LLMChatLogger::LogDebug("=== Performance Settings ===");
-        LLMChatLogger::LogDebug(Acore::StringFormat("Max Threads: %d", LLM_Config.Performance.Threading.MaxThreads));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Max API Calls: %d", LLM_Config.Performance.Threading.MaxApiCalls));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Max Threads: {}", LLM_Config.Performance.Threading.MaxThreads));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Max API Calls: {}", LLM_Config.Performance.Threading.MaxApiCalls));
         LLMChatLogger::LogDebug("=== Memory Settings ===");
-        LLMChatLogger::LogDebug(Acore::StringFormat("Memory Enabled: %s", LLM_Config.Memory.Enable ? "Yes" : "No"));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Max Interactions Per Pair: %d", LLM_Config.Memory.MaxInteractionsPerPair));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Memory Enabled: {}", LLM_Config.Memory.Enable ? "Yes" : "No"));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Max Interactions Per Pair: {}", LLM_Config.Memory.MaxInteractionsPerPair));
         LLMChatLogger::LogDebug("=== LLM Parameters ===");
         LLMChatLogger::LogDebug(Acore::StringFormat("Temperature: %.2f", LLM_Config.LLM.Temperature));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Context Size: %d", LLM_Config.LLM.ContextSize));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Context Size: {}", LLM_Config.LLM.ContextSize));
     }
 };
 
@@ -1352,7 +1352,7 @@ public:
         std::lock_guard<std::mutex> lock(loadMutex);
 
         LLMChatLogger::Log(1, Acore::StringFormat(
-            "Player %s logging in - checking LLM Chat module status", player->GetName()));
+            "Player {} logging in - checking LLM Chat module status", player->GetName()));
 
         // Get config path
         std::string currentPath = std::filesystem::current_path().string();
@@ -1362,13 +1362,13 @@ public:
         size_t currentCount = LLMChatPersonality::GetLoadedPersonalitiesCount();
         if (initialLoad && currentCount > 0) {
             LLMChatLogger::Log(1, Acore::StringFormat(
-                "Module ready - %zu personalities loaded", currentCount));
+                "Module ready - {} personalities loaded", currentCount));
             return;  // Exit if personalities are already loaded
         }
 
         if (!std::filesystem::exists(configPath)) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Could not find personalities.json at: %s\n"
+                "Could not find personalities.json at: {}\n"
                 "Please ensure the file exists in the conf directory of the module.",
                 configPath.c_str()));
             return;
@@ -1378,7 +1378,7 @@ public:
         LLMChatLogger::Log(1, "Attempting to load personalities...");
         if (!LLMChatPersonality::LoadPersonalities(configPath)) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Failed to load personalities from %s during player login", configPath.c_str()));
+                "Failed to load personalities from {} during player login", configPath.c_str()));
             return;
         }
 
@@ -1387,7 +1387,7 @@ public:
         if (currentCount > 0) {
             initialLoad = true;
             LLMChatLogger::Log(1, Acore::StringFormat(
-                "Successfully loaded %zu personalities", currentCount));
+                "Successfully loaded {} personalities", currentCount));
         } else {
             LLMChatLogger::LogError("No personalities loaded - module may not function correctly");
         }
@@ -1410,14 +1410,14 @@ public:
             }
 
             LLMChatLogger::LogDebug(Acore::StringFormat(
-                "Processing chat message from %s (type: %d): %s", 
+                "Processing chat message from {} (type: {}): {}", 
                 player->GetName(), type, msg.c_str()));
 
             // Directly send AI response
             SendAIResponse(player, msg, type, player->GetTeamId());
         }
         catch (const std::exception& e) {
-            LOG_ERROR("module.llm_chat", "Error processing chat for %s: %s", 
+            LOG_ERROR("module.llm_chat", "Error processing chat for {}: {}", 
                 player->GetName(), e.what());
         }
     }
@@ -1479,43 +1479,43 @@ public:
         std::string personalitiesPath = modulePath + "/conf/personalities.json";
         
         LLMChatLogger::Log(1, "=== Path Information ===");
-        LLMChatLogger::Log(1, Acore::StringFormat("Current working directory: %s", currentPath.c_str()));
-        LLMChatLogger::Log(1, Acore::StringFormat("Module path: %s", modulePath.c_str()));
-        LLMChatLogger::Log(1, Acore::StringFormat("Personalities file path: %s", personalitiesPath.c_str()));
-        LLMChatLogger::Log(1, Acore::StringFormat("Path exists: %s", 
+        LLMChatLogger::Log(1, Acore::StringFormat("Current working directory: {}", currentPath.c_str()));
+        LLMChatLogger::Log(1, Acore::StringFormat("Module path: {}", modulePath.c_str()));
+        LLMChatLogger::Log(1, Acore::StringFormat("Personalities file path: {}", personalitiesPath.c_str()));
+        LLMChatLogger::Log(1, Acore::StringFormat("Path exists: {}", 
             std::filesystem::exists(personalitiesPath) ? "Yes" : "No"));
         
         if (std::filesystem::exists(modulePath)) {
             LLMChatLogger::Log(1, "Listing module directory contents:");
             for (const auto& entry : std::filesystem::directory_iterator(modulePath)) {
-                LLMChatLogger::Log(1, Acore::StringFormat("  %s", entry.path().string().c_str()));
+                LLMChatLogger::Log(1, Acore::StringFormat("  {}", entry.path().string().c_str()));
             }
         }
         
         // Check if file exists before trying to load
         if (!std::filesystem::exists(personalitiesPath)) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Personalities file not found at: %s. Directory contents:", personalitiesPath.c_str()));
+                "Personalities file not found at: {}. Directory contents:", personalitiesPath.c_str()));
             
             // List directory contents
             try {
                 for (const auto& entry : std::filesystem::directory_iterator(modulePath + "/conf")) {
-                    LLMChatLogger::Log(1, Acore::StringFormat("Found file: %s", entry.path().string().c_str()));
+                    LLMChatLogger::Log(1, Acore::StringFormat("Found file: {}", entry.path().string().c_str()));
                 }
             } catch (const std::exception& e) {
-                LLMChatLogger::LogError(Acore::StringFormat("Error listing directory: %s", e.what()));
+                LLMChatLogger::LogError(Acore::StringFormat("Error listing directory: {}", e.what()));
             }
         }
         
         // Try to load personalities
         if (!LLMChatPersonality::LoadPersonalities(personalitiesPath)) {
             LLMChatLogger::LogError(Acore::StringFormat(
-                "Failed to load personalities from %s", personalitiesPath.c_str()));
+                "Failed to load personalities from {}", personalitiesPath.c_str()));
         }
         
         // Log final initialization status
         LLMChatLogger::Log(1, Acore::StringFormat(
-            "LLM Chat module initialization complete. Personalities loaded: %zu", 
+            "LLM Chat module initialization complete. Personalities loaded: {}", 
             LLMChatPersonality::GetLoadedPersonalitiesCount()));
         
         LOG_INFO("module.llm_chat", "Worker thread started");
@@ -1541,7 +1541,7 @@ public:
         }
         
         LLMChatLogger::Log(1, Acore::StringFormat(
-            "Module shutdown complete. Active calls remaining: %d", 
+            "Module shutdown complete. Active calls remaining: {}", 
             g_activeApiCalls.load()));
     }
 
@@ -1563,7 +1563,7 @@ public:
                 totalMemories += pair.second.size();
             }
             LLMChatLogger::Log(2, Acore::StringFormat(
-                "Memory cleanup complete. Active conversations: %zu, Total memories: %zu", 
+                "Memory cleanup complete. Active conversations: {}, Total memories: {}", 
                 g_conversationHistory.size(), totalMemories));
         }
     }
