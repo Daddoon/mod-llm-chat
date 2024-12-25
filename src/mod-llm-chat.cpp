@@ -120,6 +120,8 @@ using json = nlohmann::json;
 // Forward declarations
 uint32 GetNearbyPlayerCount(Player* player);
 bool IsInCombat(Player* player);
+std::string QueryLLM(std::string const& message, const std::string& senderName, 
+                    const std::string& responderName, Player* responder);
 
 // Helper function to get PlayerbotAI safely
 inline PlayerbotAI* GetBotAI(Player* player) {
@@ -255,36 +257,56 @@ void WorkerThread() {
                 req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
                 req.set(http::field::content_type, "application/json");
 
-                // Create the request body with more context
+                // First format the context string
+                std::string characterContext = fmt::format(
+                    "You are a character named {} in World of Warcraft.\n"
+                    "Current location: {} (Map: {}, Zone: {})\n"
+                    "Your level: {}, Class: {}, Race: {}\n"
+                    "Faction: {} ({})\n"
+                    "Nearby players: {}\n"
+                    "Combat state: {}\n"
+                    "\nRespond to this message from {} (Level {} {} {} of the {})): {}\n"
+                    "\nKeep your response in character and relevant to World of Warcraft lore. Remember your faction loyalty.",
+                    currentResponder->GetName(),
+                    (sAreaTableStore.LookupEntry(currentResponder->GetZoneId()) ? 
+                        sAreaTableStore.LookupEntry(currentResponder->GetZoneId())->area_name[0] : "Unknown Zone"),
+                    currentResponder->GetMapId(),
+                    currentResponder->GetZoneId(),
+                    currentResponder->GetLevel(),
+                    LLMChatPersonality::GetCharacterDetails(currentResponder).class_type,
+                    LLMChatPersonality::GetCharacterDetails(currentResponder).race,
+                    currentResponder->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde",
+                    currentResponder->GetTeamId() == TEAM_ALLIANCE ? 
+                        "Proud defender of the Alliance" : "Loyal warrior of the Horde",
+                    GetNearbyPlayerCount(currentResponder),
+                    IsInCombat(currentResponder) ? "In Combat" : "Not in Combat",
+                    queuedResponse.sender->GetName(),
+                    queuedResponse.sender->GetLevel(),
+                    LLMChatPersonality::GetCharacterDetails(queuedResponse.sender).class_type,
+                    LLMChatPersonality::GetCharacterDetails(queuedResponse.sender).race,
+                    queuedResponse.sender->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde",
+                    queuedResponse.message
+                );
+
+                // Log the formatted context for debugging
+                LLMChatLogger::Log(2, fmt::format("Formatted character context: {}", characterContext));
+
+                // Create the Ollama request body
                 nlohmann::json request_body = {
                     {"model", LLM_Config.Model},
-                    {"prompt", Acore::StringFormat(
-                        "You are a character named {} in World of Warcraft.\n"
-                        "Current location: {} (Map: {}, Zone: {})\n"
-                        "Your level: {}, Class: {}, Race: {}\n"
-                        "Nearby players: {}\n"
-                        "Combat state: {}\n"
-                        "\nRespond to this message from {} (Level {} {} {}): {}\n"
-                        "\nKeep your response in character and relevant to World of Warcraft lore.",
-                        currentResponder->GetName(),
-                        (sAreaTableStore.LookupEntry(currentResponder->GetZoneId()) ? sAreaTableStore.LookupEntry(currentResponder->GetZoneId())->area_name[0] : "Unknown Zone"),
-                        currentResponder->GetMapId(),
-                        currentResponder->GetZoneId(),
-                        currentResponder->GetLevel(),
-                        LLMChatPersonality::GetCharacterDetails(currentResponder).class_type.c_str(),
-                        LLMChatPersonality::GetCharacterDetails(currentResponder).race.c_str(),
-                        GetNearbyPlayerCount(currentResponder),
-                        IsInCombat(currentResponder) ? "In Combat" : "Not in Combat",
-                        queuedResponse.sender->GetName(),
-                        queuedResponse.sender->GetLevel(),
-                        LLMChatPersonality::GetCharacterDetails(queuedResponse.sender).class_type.c_str(),
-                        LLMChatPersonality::GetCharacterDetails(queuedResponse.sender).race.c_str(),
-                        queuedResponse.message.c_str())},
-                    {"stream", false}
+                    {"prompt", characterContext}, // Use the formatted string directly
+                    {"stream", false},
+                    {"options", {
+                        {"temperature", LLM_Config.LLM.Temperature},
+                        {"top_p", LLM_Config.LLM.TopP},
+                        {"num_predict", LLM_Config.LLM.NumPredict},
+                        {"repeat_penalty", LLM_Config.LLM.RepeatPenalty}
+                    }}
                 };
 
-                std::string request_str = request_body.dump();
-                LLMChatLogger::Log(1, Acore::StringFormat("Sending Ollama request: {}", request_str.c_str()));
+                // Log the final JSON request for debugging
+                std::string request_str = request_body.dump(2); // Pretty print with indent of 2
+                LLMChatLogger::Log(2, fmt::format("Final Ollama request JSON: {}", request_str));
 
                 req.body() = request_str;
                 req.prepare_payload();
@@ -352,7 +374,7 @@ void WorkerThread() {
 
 // Forward declarations
 void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId team);
-std::string QueryLLM(std::string const& message, const std::string& senderName, const std::string& responderName);
+std::string QueryLLM(std::string const& message, const std::string& senderName, const std::string& responderName, Player* responder);
 void AddToMemory(const std::string& sender, const std::string& responder, const std::string& message, const std::string& response);
 
 // Add a conversation counter
@@ -820,7 +842,8 @@ std::string DetectEmotion(const std::string& message) {
 }
 
 // Modify QueryLLM to be safer
-std::string QueryLLM(std::string const& message, const std::string& senderName, const std::string& responderName)
+std::string QueryLLM(std::string const& message, const std::string& senderName, 
+                    const std::string& responderName, Player* responder)
 {
     if (g_moduleShutdown) {
         return "";
@@ -848,7 +871,7 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
         auto responseFuture = responsePromise.get_future();
 
         // Launch API request in a separate thread
-        std::thread apiThread([message, senderName, responderName, &responsePromise]() {
+        std::thread apiThread([message, senderName, responderName, responder, &responsePromise]() {
             try {
                 // Get conversation history between sender and responder
                 std::string conversationHistory = GetConversationContext(senderName, responderName);
@@ -861,11 +884,12 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                     "Detected emotion: {}, Selected personality: {}", 
                     emotion.c_str(), personality.name.c_str()));
 
-                // Create context with selected personality and conversation history
-        std::string contextPrompt = 
-                    personality.prompt + "\n\n" +
-                    "You are responding as " + responderName + " to " + senderName + "\n" +
-                    conversationHistory +
+                // Format the context string first
+                std::string characterContext = fmt::format(
+                    "{}\n\n"
+                    "You are responding as {} to {}\n"
+                    "You are a {} {} of the {}\n"
+                    "{}"
                     "Additional guidelines:\n"
                     "- You are a real person playing WoW who can discuss any topic naturally\n"
                     "- Feel free to share personal opinions and experiences beyond just the game\n"
@@ -873,57 +897,65 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                     "- Don't force every response to be about WoW or lore\n"
                     "- Be natural and casual, like a real player chatting while gaming\n"
                     "- You can reference pop culture, current events, or other games\n"
-                    "- If referring to the player, use their name: " + senderName + "\n\n"
-                    "Chat naturally with " + senderName + " about: " + message;
+                    "- Remember your faction loyalty when appropriate\n"
+                    "- If referring to the player, use their name: {}\n\n"
+                    "Chat naturally with {} about: {}",
+                    personality.prompt,
+                    responderName,
+                    senderName,
+                    LLMChatPersonality::GetCharacterDetails(responder).race,
+                    LLMChatPersonality::GetCharacterDetails(responder).class_type,
+                    responder->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde",
+                    conversationHistory,
+                    senderName,
+                    senderName,
+                    message
+                );
 
-                LLMChatLogger::LogDebug(Acore::StringFormat("Context prompt: {}", contextPrompt.c_str()));
+                // Log the formatted context for debugging
+                LLMChatLogger::Log(2, fmt::format("Formatted context prompt: {}", characterContext));
 
-                // Create the request payload using OpenAI format
-        json requestJson = {
+                // Create the Ollama request
+                nlohmann::json requestJson = {
                     {"model", LLM_Config.Model},
-                    {"messages", {
-                        {
-                            {"role", "system"},
-                            {"content", contextPrompt}
-                        },
-                        {
-                            {"role", "user"},
-                            {"content", message}
-                        }
-                    }},
-                    {"temperature", LLM_Config.LLM.Temperature},
-                    {"max_tokens", LLM_Config.LLM.NumPredict},
-                    {"top_p", LLM_Config.LLM.TopP},
-                    {"frequency_penalty", 0.0},
-                    {"presence_penalty", LLM_Config.LLM.RepeatPenalty},
-                    {"stop", {"\n\n", "Human:", "Assistant:", "[", "<"}},
-                    {"stream", false}
+                    {"prompt", characterContext}, // Use the formatted string directly
+                    {"stream", false},
+                    {"options", {
+                        {"temperature", LLM_Config.LLM.Temperature},
+                        {"top_p", LLM_Config.LLM.TopP},
+                        {"num_predict", LLM_Config.LLM.NumPredict},
+                        {"repeat_penalty", LLM_Config.LLM.RepeatPenalty}
+                    }}
                 };
 
-        // Set up the IO context
-        asio::io_context ioc;
-        tcp::resolver resolver(ioc);
-        beast::tcp_stream stream(ioc);
+                // Log the final JSON request for debugging
+                std::string finalRequest = requestJson.dump(2);
+                LLMChatLogger::Log(2, fmt::format("Final Ollama request JSON: {}", finalRequest));
 
-        // Look up the domain name
-        auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
-                LLMChatLogger::LogDebug(Acore::StringFormat(
+                // Set up the IO context
+                asio::io_context ioc;
+                tcp::resolver resolver(ioc);
+                beast::tcp_stream stream(ioc);
+
+                // Look up the domain name
+                auto const results = resolver.resolve(LLM_Config.Host, LLM_Config.Port);
+                LLMChatLogger::LogDebug(fmt::format(
                     "Attempting to connect to {}:{}", 
                     LLM_Config.Host.c_str(), LLM_Config.Port.c_str()));
 
                 // Make the connection with timeout
-        beast::error_code ec;
-        stream.connect(results, ec);
+                beast::error_code ec;
+                stream.connect(results, ec);
                 if (ec) {
                     responsePromise.set_value("Error: Cannot connect to LLM service. Please check if the service is running.");
                     return;
                 }
 
                 // Set up the HTTP request
-        http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
-        req.set(http::field::host, LLM_Config.Host);
-        req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-        req.set(http::field::content_type, "application/json");
+                http::request<http::string_body> req{http::verb::post, LLM_Config.Target, 11};
+                req.set(http::field::host, LLM_Config.Host);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                req.set(http::field::content_type, "application/json");
 
                 // Add authentication if provided
                 if (!LLM_Config.ApiKey.empty()) {
@@ -934,29 +966,29 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                 }
 
                 // Set the request body
-                req.body() = requestJson.dump();
-        req.prepare_payload();
+                req.body() = finalRequest;
+                req.prepare_payload();
 
-        // Send the HTTP request
-        http::write(stream, req, ec);
+                // Send the HTTP request
+                http::write(stream, req, ec);
                 if (ec) {
                     responsePromise.set_value("Error: Failed to send request to LLM service");
                     return;
                 }
 
-        // This buffer is used for reading
-        beast::flat_buffer buffer;
-        http::response<http::string_body> res;
+                // This buffer is used for reading
+                beast::flat_buffer buffer;
+                http::response<http::string_body> res;
 
                 // Receive the HTTP response with timeout
-        http::read(stream, buffer, res, ec);
+                http::read(stream, buffer, res, ec);
                 if (ec) {
                     responsePromise.set_value("Error: Failed to get response from LLM service");
                     return;
                 }
 
-        // Gracefully close the socket
-        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+                // Gracefully close the socket
+                stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
                 if (res.result() != http::status::ok) {
                     std::string error = "Error: LLM service error - " + 
@@ -964,9 +996,9 @@ std::string QueryLLM(std::string const& message, const std::string& senderName, 
                         " - " + res.body();
                     responsePromise.set_value(error);
                     return;
-        }
+                }
 
-        std::string response = ParseLLMResponse(res.body());
+                std::string response = ParseLLMResponse(res.body());
 
                 // After getting response, store in memory
                 if (!response.empty()) {
@@ -1110,7 +1142,7 @@ void SendAIResponse(Player* sender, std::string msg, uint32 chatType, TeamId tea
                     // For say/yell, check distance
                     if (player->IsWithinDist(sender, searchRange)) {
                         LLMChatLogger::Log(1, Acore::StringFormat(
-                            "Found nearby bot: {} at distance %.2f", 
+                            "Found nearby bot: {} at distance {}.2f", 
                             player->GetName(),
                             player->GetDistance(sender)));
                         nearbyBots.push_back(player);
@@ -1323,7 +1355,7 @@ private:
         LLMChatLogger::LogDebug("=== Detailed Configuration ===");
         LLMChatLogger::LogDebug(Acore::StringFormat("Endpoint: {}", LLM_Config.Endpoint.c_str()));
         LLMChatLogger::LogDebug(Acore::StringFormat("Model: {}", LLM_Config.Model.c_str()));
-        LLMChatLogger::LogDebug(Acore::StringFormat("Chat Range: %.2f", LLM_Config.ChatRange));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Chat Range: {}.2f", LLM_Config.ChatRange));
         LLMChatLogger::LogDebug(Acore::StringFormat("Max Responses Per Message: {}", LLM_Config.MaxResponsesPerMessage));
         LLMChatLogger::LogDebug(Acore::StringFormat("Response Chance: {}", LLM_Config.ResponseChance));
         LLMChatLogger::LogDebug("=== Performance Settings ===");
@@ -1333,7 +1365,7 @@ private:
         LLMChatLogger::LogDebug(Acore::StringFormat("Memory Enabled: {}", LLM_Config.Memory.Enable ? "Yes" : "No"));
         LLMChatLogger::LogDebug(Acore::StringFormat("Max Interactions Per Pair: {}", LLM_Config.Memory.MaxInteractionsPerPair));
         LLMChatLogger::LogDebug("=== LLM Parameters ===");
-        LLMChatLogger::LogDebug(Acore::StringFormat("Temperature: %.2f", LLM_Config.LLM.Temperature));
+        LLMChatLogger::LogDebug(Acore::StringFormat("Temperature: {}.2f", LLM_Config.LLM.Temperature));
         LLMChatLogger::LogDebug(Acore::StringFormat("Context Size: {}", LLM_Config.LLM.ContextSize));
     }
 };
