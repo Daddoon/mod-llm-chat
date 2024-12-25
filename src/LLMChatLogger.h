@@ -2,7 +2,7 @@
 #define _MOD_LLM_CHAT_LOGGER_H_
 
 #include <string>
-#include "mod_llm_chat_config.h"
+#include "mod-llm-chat-config.h"
 
 class LLMChatLogger {
 public:

@@ -77,7 +77,7 @@ std::string LLMChatDB::GetConversationHistory(uint32 botGuid, uint32 playerGuid)
     }
     catch (const std::exception& e)
     {
-        printf("Error getting conversation history: %s\n", e.what());
+        printf("Error getting conversation history: {}\n", e.what());
     }
     return "";
 }
@@ -100,7 +100,7 @@ std::pair<std::string, uint32> LLMChatDB::GetEmotionalState(uint32 guid)
     }
     catch (const std::exception& e)
     {
-        printf("Error getting emotional state: %s\n", e.what());
+        printf("Error getting emotional state: {}\n", e.what());
     }
     return std::make_pair("neutral", 0);
 }
@@ -121,7 +121,7 @@ int32 LLMChatDB::GetRelationship(uint32 botGuid, uint32 playerGuid)
     }
     catch (const std::exception& e)
     {
-        printf("Error getting relationship: %s\n", e.what());
+        printf("Error getting relationship: {}\n", e.what());
     }
     return 0;
 }
@@ -135,7 +135,7 @@ bool LLMChatDB::ExecuteQuery(const char* sql)
     }
     catch (const std::exception& e)
     {
-        printf("Error executing query: %s\n", e.what());
+        printf("Error executing query: {}\n", e.what());
         return false;
     }
 } 

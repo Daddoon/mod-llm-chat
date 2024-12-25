@@ -4,7 +4,7 @@
 #include "Define.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
-#include "mod_llm_chat_config.h"
+#include "mod-llm-chat-config.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -32,12 +32,14 @@ struct Personality {
     std::string base_context;
     std::vector<std::string> emotions;
     std::map<std::string, std::string> traits;
-    std::vector<std::string> knowledge_base;
-    std::map<std::string, std::string> chat_style;
-    std::map<std::string, std::string> response_patterns;
-    std::map<std::string, std::string> faction_responses;
-    std::map<std::string, std::string> race_responses;
-    std::map<std::string, std::string> class_responses;
+    struct ChatStyle {
+        std::vector<std::string> typical_phrases;
+    } chat_style;
+};
+
+struct EmotionType {
+    std::vector<std::string> typical_phrases;
+    std::string response_style;
 };
 
 class LLMChatPersonality {
@@ -49,6 +51,8 @@ public:
     static std::string GetMoodBasedResponse(const std::string& tone, Player* sender = nullptr, Player* recipient = nullptr);
     static CharacterDetails GetCharacterDetails(Player* player);
     static CharacterDetails GetCharacterDetailsFromDB(std::string const& name);
+    static std::string BuildContext(const Personality& personality, Player* player);
+    static size_t GetLoadedPersonalitiesCount() { return g_personalities.size(); }
 
 private:
     static std::string GetFactionName(TeamId faction);
@@ -62,7 +66,7 @@ private:
     static CharacterDetails QueryCharacterFromDB(std::string const& name);
 
     static std::vector<Personality> g_personalities;
-    static std::map<std::string, std::map<std::string, std::string>> g_emotion_types;
+    static std::map<std::string, EmotionType> g_emotion_types;
     static std::map<std::string, std::map<std::string, std::string>> g_faction_data;
     static std::map<std::string, std::map<std::string, std::string>> g_race_data;
     static std::map<std::string, std::map<std::string, std::string>> g_class_data;

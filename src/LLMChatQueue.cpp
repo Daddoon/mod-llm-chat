@@ -1,6 +1,6 @@
 #include "LLMChatQueue.h"
 #include "LLMChatLogger.h"
-#include "mod_llm_chat.h"
+#include "mod-llm-chat.h"
 
 // Static member initialization
 std::queue<QueuedResponse> LLMChatQueue::m_queue;

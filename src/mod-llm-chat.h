@@ -2,7 +2,7 @@
 #define _MOD_LLM_CHAT_H_
 
 #include "Define.h"
-#include "mod_llm_chat_config.h"
+#include "mod-llm-chat-config.h"
 #include <string>
 
 // Function declarations

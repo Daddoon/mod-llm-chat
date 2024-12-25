@@ -1,6 +1,6 @@
 #include "LLMChatMemory.h"
 #include "LLMChatLogger.h"
-#include "mod_llm_chat_config.h"
+#include "mod-llm-chat-config.h"
 #include "World.h"
 
 // Static member initialization

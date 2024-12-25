@@ -7,64 +7,107 @@
 #include "DBCStores.h"
 #include "SharedDefines.h"
 #include "Config.h"
+#include "World.h"
+#include "GameTime.h"
+#include "Weather.h"
+#include "WeatherMgr.h"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <algorithm>
 #include <sstream>
+#include <filesystem>
+#include <fmt/format.h>
+#include <chrono>
+
+using json = nlohmann::json;
 
 // Static member initialization
 std::vector<Personality> LLMChatPersonality::g_personalities;
-std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_emotion_types;
+std::map<std::string, EmotionType> LLMChatPersonality::g_emotion_types;
 std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_faction_data;
 std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_race_data;
 std::map<std::string, std::map<std::string, std::string>> LLMChatPersonality::g_class_data;
 
-bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
+bool LLMChatPersonality::LoadPersonalities(std::string const& filename) {
     try {
-        if (!sConfigMgr->LoadModulesConfigs()) {
-            LLMChatLogger::LogError("Failed to load personality file: " + filename);
+        LLMChatLogger::Log(1, Acore::StringFormat("=== Starting Personality Load ==="));
+        LLMChatLogger::Log(1, Acore::StringFormat("Loading from file: {}", filename));
+        LLMChatLogger::Log(1, Acore::StringFormat("Current personality count: {}", g_personalities.size()));
+        
+        // Check if file exists
+        if (!std::filesystem::exists(filename)) {
+            LLMChatLogger::LogError(Acore::StringFormat(
+                "Personalities file not found at: {}", filename));
+            return false;
+        }
+
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            LLMChatLogger::LogError("Failed to open personalities file");
+            return false;
+        }
+
+        LLMChatLogger::Log(1, "File opened successfully, parsing JSON...");
+        json jsonData;
+        try {
+            file >> jsonData;
+            LLMChatLogger::Log(1, "JSON parsed successfully");
+        } catch (const json::parse_error& e) {
+            LLMChatLogger::LogError(Acore::StringFormat("JSON parse error: {}", e.what()));
             return false;
         }
 
         g_personalities.clear();
         
-        // Load personalities from config
-        uint32 count = sConfigMgr->GetOption<uint32>("Personalities.Count", 0);
-        for (uint32 i = 0; i < count; ++i) {
-            try {
-                std::string base = "Personality." + std::to_string(i) + ".";
-                Personality personality;
-                
-                personality.id = sConfigMgr->GetOption<std::string>(base + "Id", "");
-                if (personality.id.empty()) {
+        if (jsonData.contains("personalities") && jsonData["personalities"].is_array()) {
+            size_t totalPersonalities = jsonData["personalities"].size();
+            LLMChatLogger::Log(1, Acore::StringFormat(
+                "Found {} personalities in JSON", totalPersonalities));
+
+            for (const auto& item : jsonData["personalities"]) {
+                try {
+                    Personality personality;
+                    personality.id = item["id"].get<std::string>();
+                    personality.name = item["name"].get<std::string>();
+                    personality.prompt = item["prompt"].get<std::string>();
+                    personality.base_context = item["base_context"].get<std::string>();
+                    personality.emotions = item["emotions"].get<std::vector<std::string>>();
+                    
+                    // Parse traits
+                    if (item.contains("traits") && item["traits"].is_object()) {
+                        for (const auto& [key, value] : item["traits"].items()) {
+                            personality.traits[key] = value.get<std::string>();
+                        }
+                    }
+
+                    g_personalities.push_back(personality);
+                    LLMChatLogger::Log(1, Acore::StringFormat(
+                        "Successfully loaded personality: {} ({})", 
+                        personality.name, personality.id));
+                }
+                catch (const std::exception& e) {
+                    LLMChatLogger::LogError(Acore::StringFormat(
+                        "Error parsing personality: {}", e.what()));
                     continue;
                 }
-                
-                personality.name = sConfigMgr->GetOption<std::string>(base + "Name", "");
-                personality.prompt = sConfigMgr->GetOption<std::string>(base + "Prompt", "");
-                personality.base_context = sConfigMgr->GetOption<std::string>(base + "BaseContext", "");
-                
-                // Load emotions
-                std::string emotions = sConfigMgr->GetOption<std::string>(base + "Emotions", "");
-                std::istringstream iss(emotions);
-                std::string emotion;
-                while (std::getline(iss, emotion, ',')) {
-                    personality.emotions.push_back(emotion);
-                }
-                
-                g_personalities.push_back(personality);
             }
-            catch (const std::exception& e) {
-                LLMChatLogger::LogError("Error parsing personality " + std::to_string(i) + ": " + std::string(e.what()));
-                continue;
-            }
+        } else {
+            LLMChatLogger::LogError("No personalities array found in JSON");
+            return false;
         }
 
-        LLMChatLogger::Log(2, "Loaded " + std::to_string(g_personalities.size()) + 
-                             " personalities from " + filename);
+        LLMChatLogger::Log(1, Acore::StringFormat(
+            "=== Personality Load Complete ===\n"
+            "Total personalities loaded: {}\n"
+            "Emotion types loaded: {}", 
+            g_personalities.size(), 
+            g_emotion_types.size()));
+
         return true;
     }
     catch (const std::exception& e) {
-        LLMChatLogger::LogError("Error loading personalities: " + std::string(e.what()));
+        LLMChatLogger::LogError(Acore::StringFormat(
+            "Error loading personalities: {}", e.what()));
         return false;
     }
 }
@@ -72,6 +115,11 @@ bool LLMChatPersonality::LoadPersonalities(const std::string& filename) {
 Personality LLMChatPersonality::SelectPersonality(const std::string& emotion,
                                                 Player* sender,
                                                 Player* recipient) {
+    // Log the current state of personalities
+    LLMChatLogger::Log(1, Acore::StringFormat(
+        "SelectPersonality called - Total personalities loaded: {}, Emotion: {}", 
+        g_personalities.size(), emotion));
+
     CharacterDetails senderDetails = GetCharacterDetails(sender);
     CharacterDetails recipientDetails = GetCharacterDetails(recipient);
     
@@ -79,6 +127,8 @@ Personality LLMChatPersonality::SelectPersonality(const std::string& emotion,
     
     // Find personalities that handle this emotion well
     for (const auto& personality : g_personalities) {
+        LLMChatLogger::Log(2, Acore::StringFormat(
+            "Checking personality {} for emotion {}", personality.id, emotion));
         if (std::find(personality.emotions.begin(), 
                       personality.emotions.end(), 
                       emotion) != personality.emotions.end()) {
@@ -88,17 +138,21 @@ Personality LLMChatPersonality::SelectPersonality(const std::string& emotion,
     
     // If no matching personalities, use all personalities
     if (matchingPersonalities.empty()) {
-        matchingPersonalities = g_personalities;
-    }
-    
-    // Select random personality from matches
-    if (matchingPersonalities.empty()) {
         // Return a default personality if no personalities are loaded
-        Personality defaultPersonality;
-        defaultPersonality.id = "default";
-        defaultPersonality.name = "Default";
-        defaultPersonality.prompt = "You are a friendly World of Warcraft player.";
-        return defaultPersonality;
+        if (g_personalities.empty()) {
+            LLMChatLogger::LogError(Acore::StringFormat(
+                "No personalities loaded - g_personalities is empty. Using default personality."));
+            Personality defaultPersonality;
+            defaultPersonality.id = "default";
+            defaultPersonality.name = "Default";
+            defaultPersonality.prompt = "You are a friendly World of Warcraft player.";
+            defaultPersonality.base_context = "You are helpful and knowledgeable about World of Warcraft.";
+            defaultPersonality.emotions = {"friendly", "helpful"};
+            defaultPersonality.traits["friendliness"] = "high";
+            return defaultPersonality;
+        }
+        LLMChatLogger::Log(1, "No matching personalities found, using all available personalities");
+        matchingPersonalities = g_personalities;
     }
     
     return matchingPersonalities[urand(0, matchingPersonalities.size() - 1)];
@@ -117,15 +171,13 @@ std::string LLMChatPersonality::DetectEmotion(const std::string& message) {
         const auto& data = emotion_pair.second;
         int score = 0;
         
-        if (data.find("typical_phrases") != data.end()) {
-            for (const auto& phrase : data.at("typical_phrases")) {
-                std::string keyword{phrase};
-                std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
-                size_t pos = 0;
-                while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
-                    score++;
-                    pos += keyword.length();
-                }
+        for (const auto& phrase : data.typical_phrases) {
+            std::string keyword{phrase};
+            std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
+            size_t pos = 0;
+            while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
+                score++;
+                pos += keyword.length();
             }
         }
         emotionScores[emotion] = score;
@@ -159,15 +211,13 @@ std::string LLMChatPersonality::DetectTone(const std::string& message) {
         const std::string& emotion = emotion_pair.first;
         const auto& data = emotion_pair.second;
         int score = 0;
-        if (data.find("typical_phrases") != data.end()) {
-            for (const auto& phrase : data.at("typical_phrases")) {
-                std::string keyword{phrase};
-                std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
-                size_t pos = 0;
-                while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
-                    score++;
-                    pos += keyword.length();
-                }
+        for (const auto& phrase : data.typical_phrases) {
+            std::string keyword{phrase};
+            std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
+            size_t pos = 0;
+            while ((pos = lowerMsg.find(keyword, pos)) != std::string::npos) {
+                score++;
+                pos += keyword.length();
             }
         }
         toneScores[emotion] = score;
@@ -194,13 +244,11 @@ std::string LLMChatPersonality::GetMoodBasedResponse(const std::string& tone,
     CharacterDetails recipientDetails = GetCharacterDetails(recipient);
     
     // Get response style from emotion types if available
-    if (g_emotion_types.find(tone) != g_emotion_types.end()) {
-        const auto& tone_data = g_emotion_types.at(tone);
-        if (tone_data.find("response_style") != tone_data.end()) {
-            std::string style = tone_data.at("response_style");
-            return "You are a " + style + " adventurer in World of Warcraft. " +
-                   "Maintain this tone while staying true to the game's setting and lore.";
-        }
+    auto it = g_emotion_types.find(tone);
+    if (it != g_emotion_types.end()) {
+        const auto& tone_data = it->second;
+        return "You are a " + tone_data.response_style + " adventurer in World of Warcraft. " +
+               "Maintain this tone while staying true to the game's setting and lore.";
     }
 
     // Default response if tone not found
@@ -347,6 +395,56 @@ CharacterDetails LLMChatPersonality::QueryCharacterFromDB(std::string const& nam
         details.current_zone = GetZoneName(fields[3].Get<uint32>());
     }
     return details;
+}
+
+std::string LLMChatPersonality::BuildContext(const Personality& personality, Player* player) {
+    std::stringstream context;
+    
+    // Add personality base context and prompt
+    context << "Character Context:\n";
+    context << personality.base_context << "\n\n";
+    context << "Roleplay Instructions:\n";
+    context << personality.prompt << "\n\n";
+    
+    // Add personality traits
+    context << "Character Traits:\n";
+    for (const auto& [trait, value] : personality.traits) {
+        context << "- " << trait << ": " << value << "\n";
+    }
+    context << "\n";
+
+    // Add player context if available
+    if (player) {
+        context << "Player Information:\n";
+        CharacterDetails details = GetCharacterDetails(player);
+        
+        // Essential character info
+        context << "- Name: " << details.name << "\n";
+        context << "- Race: " << details.race << "\n";
+        context << "- Class: " << details.class_type << "\n";
+        context << "- Level: " << details.level << "\n";
+        context << "- Faction: " << details.faction << "\n";
+        
+        // Important situational context
+        if (player->IsInCombat()) 
+            context << "- Status: In Combat\n";
+        if (player->IsPvP())
+            context << "- Status: PvP Flagged\n";
+        if (player->GetGroup()) {
+            context << "- Status: " << (player->GetGroup()->isRaidGroup() ? "In Raid" : "In Group") << "\n";
+        }
+        
+        // Location context
+        context << "- Current Location: " << details.current_zone << "\n";
+        
+        // RP profile if it exists
+        if (!details.rp_profile.empty()) {
+            context << "\nRP Background:\n" << details.rp_profile << "\n";
+        }
+    }
+
+    LLMChatLogger::Log(2, "Generated Context:\n" + context.str());
+    return context.str();
 }
 
  

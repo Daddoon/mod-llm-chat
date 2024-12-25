@@ -224,10 +224,10 @@ LLMChat.ApiSecret = ""
 #
 #    LLMChat.ChatRange
 #        Description: Maximum range in yards for chat responses
-#        Default:     25.0
+#        Default:     30.0
 #
 
-LLMChat.ChatRange = 25.0
+LLMChat.ChatRange = 30.0
 
 #
 #    LLMChat.ResponsePrefix
@@ -240,18 +240,18 @@ LLMChat.ResponsePrefix = ""
 #
 #    LLMChat.MaxResponsesPerMessage
 #        Description: Maximum number of AI responses per player message
-#        Default:     1
+#        Default:     3
 #
 
-LLMChat.MaxResponsesPerMessage = 1
+LLMChat.MaxResponsesPerMessage = 3
 
 #
 #    LLMChat.ResponseChance
 #        Description: Percentage chance of generating a response (0-100)
-#        Default:     30
+#        Default:     100
 #
 
-LLMChat.ResponseChance = 30
+LLMChat.ResponseChance = 100
 
 ###################################################################################################
 # SECTION 5: Performance & Rate Limiting
@@ -372,8 +372,16 @@ LLMChat.Memory.MaxContextLength = 2000
 #
 #    LLMChat.PersonalityFile
 #        Description: Path to the personality configuration file
-#        Default:     "mod_llm_chat/conf/personalities.json"
+#        Default:     "modules/mod_llm_chat/conf/personalities.json"
 #
 
-LLMChat.PersonalityFile = "mod_llm_chat/conf/personalities.json"
+LLMChat.PersonalityFile = "modules/mod_llm_chat/conf/personalities.json"
+
+#
+#    LLMChat.RateLimit.MessagesPerSecond
+#        Description: Maximum messages per second allowed
+#        Default:     5
+#
+
+LLMChat.RateLimit.MessagesPerSecond = 5
 
