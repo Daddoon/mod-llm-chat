@@ -259,27 +259,22 @@ void WorkerThread() {
 
                 // First format the context string
                 std::string characterContext = fmt::format(
-                    "You are a character named {} in World of Warcraft.\n"
-                    "Current location: {} (Map: {}, Zone: {})\n"
-                    "Your level: {}, Class: {}, Race: {}\n"
-                    "Faction: {} ({})\n"
+                    "You are {} playing World of Warcraft.\n"
+                    "Location: {}\n"
+                    "Level {} {} {} ({} player)\n"
                     "Nearby players: {}\n"
-                    "Combat state: {}\n"
-                    "\nRespond to this message from {} (Level {} {} {} of the {})): {}\n"
-                    "\nKeep your response in character and relevant to World of Warcraft lore. Remember your faction loyalty.",
+                    "{}\n"
+                    "\nRespond casually to {} (Level {} {} {}, {} player): {}\n"
+                    "\nKeep responses brief and casual, like a real player chatting while gaming. No roleplaying.",
                     currentResponder->GetName(),
                     (sAreaTableStore.LookupEntry(currentResponder->GetZoneId()) ? 
-                        sAreaTableStore.LookupEntry(currentResponder->GetZoneId())->area_name[0] : "Unknown Zone"),
-                    currentResponder->GetMapId(),
-                    currentResponder->GetZoneId(),
+                        sAreaTableStore.LookupEntry(currentResponder->GetZoneId())->area_name[0] : "Unknown"),
                     currentResponder->GetLevel(),
-                    LLMChatPersonality::GetCharacterDetails(currentResponder).class_type,
                     LLMChatPersonality::GetCharacterDetails(currentResponder).race,
+                    LLMChatPersonality::GetCharacterDetails(currentResponder).class_type,
                     currentResponder->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde",
-                    currentResponder->GetTeamId() == TEAM_ALLIANCE ? 
-                        "Proud defender of the Alliance" : "Loyal warrior of the Horde",
                     GetNearbyPlayerCount(currentResponder),
-                    IsInCombat(currentResponder) ? "In Combat" : "Not in Combat",
+                    IsInCombat(currentResponder) ? "Currently in combat" : "",
                     queuedResponse.sender->GetName(),
                     queuedResponse.sender->GetLevel(),
                     LLMChatPersonality::GetCharacterDetails(queuedResponse.sender).class_type,
@@ -886,28 +881,19 @@ std::string QueryLLM(std::string const& message, const std::string& senderName,
 
                 // Format the context string first
                 std::string characterContext = fmt::format(
-                    "{}\n\n"
-                    "You are responding as {} to {}\n"
-                    "You are a {} {} of the {}\n"
-                    "{}"
-                    "Additional guidelines:\n"
-                    "- You are a real person playing WoW who can discuss any topic naturally\n"
-                    "- Feel free to share personal opinions and experiences beyond just the game\n"
-                    "- You can discuss real-world topics, jokes, or general conversation\n"
-                    "- Don't force every response to be about WoW or lore\n"
-                    "- Be natural and casual, like a real player chatting while gaming\n"
-                    "- You can reference pop culture, current events, or other games\n"
-                    "- Remember your faction loyalty when appropriate\n"
-                    "- If referring to the player, use their name: {}\n\n"
-                    "Chat naturally with {} about: {}",
-                    personality.prompt,
+                    "You are {} chatting while playing World of Warcraft.\n"
+                    "Guidelines:\n"
+                    "- Keep responses short and casual (1-2 sentences usually)\n"
+                    "- Talk like a real person gaming, not a character\n"
+                    "- Be natural, use common gaming slang\n"
+                    "- No need to mention lore or roleplay\n"
+                    "- It's fine to use abbreviations and game terms\n"
+                    "- Remember you're on the {} side\n\n"
+                    "Previous chat:\n{}\n"
+                    "Respond to {}: {}",
                     responderName,
-                    senderName,
-                    LLMChatPersonality::GetCharacterDetails(responder).race,
-                    LLMChatPersonality::GetCharacterDetails(responder).class_type,
                     responder->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde",
                     conversationHistory,
-                    senderName,
                     senderName,
                     message
                 );
