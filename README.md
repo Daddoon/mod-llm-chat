@@ -7,7 +7,7 @@ This module enables AI chat interactions in World of Warcraft using either Ollam
 ### System Requirements
 
 - AzerothCore v5.0.0+
-- libcurl development libraries
+- Boost development libraries (libboost-all-dev)
 - nlohmann-json library (version 3.2.0 or higher)
 - Ollama or LM Studio installed locally
 - CMake 3.5+ (included with AzerothCore)
@@ -23,86 +23,66 @@ Choose one:
 
 ### 1. Install System Dependencies (Ubuntu/Debian)
 
-Update package list
+Update package list:
+
+```bash
 sudo apt update
-Install required development libraries
+```
+
+Install required development libraries:
+
+```bash
 sudo apt install -y \
-libcurl4-openssl-dev \
-nlohmann-json3-dev \
-build-essential \
-cmake \
-git
+    libboost-all-dev \
+    nlohmann-json3-dev \
+    build-essential \
+    cmake \
+    git
+```
 
+## Install the tables for the character database
 
-## Install the tables for the character database 
+The tables are required for storing long term conversation memory with playerbots and characters as well as setting up initial character traits and responses.
 
-The tables are requried for storing long term conversation memory with playerbots and characters as well as setting up initial character traits and responses
+Navigate to the sql directory:
 
+```bash
+cd azerothcore-wotlk/modules/mod_llm_chat/data/sql/db-characters/base
+```
 
-Navigate to the sql directory 
+Install the tables with command:
 
-azerothcore-wotlk/modules/mod_llm_chat/data/sql/db-characters/base 
+```sql
+source character_rp_profiles.sql
+```
 
-install the tables with command 
+## Configure the LLM Provider
 
-`mysql -u root -p acore_characters < db_llm_chat.sql`
+### Option A: Ollama (Recommended)
 
-## Confirm the tables exist 
+1. Install Ollama from https://ollama.ai/
+2. Start the Ollama service
+3. Pull the recommended model:
 
-
-run command to Confirm the tables exist
-
-`mysql -u root -p acore_characters -e "SHOW TABLES LIKE 'bot_llmchat%';"`
-
-+-------------------------------------------+
-| Tables_in_acore_characters (bot_llmchat%) |
-+-------------------------------------------+
-| bot_llmchat_backstories                   |
-| bot_llmchat_conversations                 |
-| bot_llmchat_emotions                      |
-| bot_llmchat_memories                      |
-| bot_llmchat_personalities                 |
-| bot_llmchat_relationships                 |
-| bot_llmchat_triggers                      |
-+-------------------------------------------+
-
-
-### 2. Install LLM Provider
-
-#### Option A: Ollama (Recommended)
-
-Install Ollama 
-`curl https://ollama.ai/install.sh | sh`
-
-Start Ollama service `sudo systemctl start ollama`
-
-Pull the Llama2 model `ollama pull llama3.2:1b`
-
-Verify installation `ollama list`
-
-recommend downloading the uncensored model of the 1b model
-
-#Censored Origional Model
-
-`ollama pull llama3.2:1b`
-
-#Uncensored Model
-
-`ollama pull socialnetwooky/llama3.2-abliterated:1b_q8`
+```bash
+ollama pull socialnetwooky/llama3.2-abliterated:1b_q8
+```
 
 To switch between models, update your `mod-llm-chat.conf` file:
 
 - For CPU servers: `LLM.Ollama.Model = "llama3.2:1b"`
 - For GPU servers: `LLM.Ollama.Model = "llama3.2:8b"`
 
-#### Option B: LM Studio
+### Option B: LM Studio
 
 1. Download LM Studio from https://lmstudio.ai/
 2. Install and configure with your preferred model
 3. Enable API access in settings
 
-4. Log into the game
-5. Type any message in chat - the AI should respond automatically
+## Usage
+
+1. Log into the game
+2. Type any message in chat - the AI should respond automatically
 
 ## Troubleshooting
 
@@ -112,50 +92,25 @@ To switch between models, update your `mod-llm-chat.conf` file:
 
    - Verify Ollama/LM Studio is running
 
-   #bash
-   `sudo systemctl status ollama`
-   `sudo systemctl restart ollama`  # if needed
- 
+   ```bash
+   sudo systemctl status ollama
+   sudo systemctl restart ollama  # if needed
+   ```
 
    - Check endpoints in configuration
    - Verify model is properly installed
 
 2. "Required library not found"
 
-   #bash
+   ```bash
    # Reinstall dependencies
-   `sudo apt install -y libcurl4-openssl-dev nlohmann-json3-dev`
-   
+   sudo apt install -y libboost-all-dev nlohmann-json3-dev
+   ```
 
 3. No AI Response
    - Check module is enabled in configuration
    - Verify chat range setting
    - Check server logs for errors
-
-
-4. Running Ollama from another machine, Container or Virtual machine
-   - Make Ollama Accessible from other machines, Add an override config to enable the service 
-   - `nano /etc/systemd/system/ollama.service.d/override.conf`
-
-   paste the Contents then press CTL + X then Y to save the changes These should be on seperate lines 
-
-`[Service]`
-
-`Environment="OLLAMA_HOST=0.0.0.0"`
-
-- Stop ollama `systemctl stop ollama` 
-- reload the daemon `systemctl daemon-reload`
-- Restart Ollama `systemctl stop ollama`
-- Test the connection (On your linux terminal type `ip addr` or `ip a`) 
-- on another local machine try to access ollama via the ip and port `http://192.168.0.75:11434` (Use Your IP Address not my example one) if everything is up and running correctly it should display `Ollama is running` on the webpage
-
-
-### Logs
-
-Check the following for error messages:
-
-- WorldServer console output
-- Server logs in `/var/log/azerothcore/` or your configured log directory
 
 ## Support
 

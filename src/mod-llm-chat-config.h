@@ -1,95 +1,53 @@
-#ifndef _MOD_LLM_CHAT_CONFIG_H_
-#define _MOD_LLM_CHAT_CONFIG_H_
+#ifndef MOD_LLM_CHAT_CONFIG_H
+#define MOD_LLM_CHAT_CONFIG_H
 
-#include <string>
 #include "Define.h"
+#include <string>
+#include <cstdint>
 
-struct LLMConfig {
-    bool Enabled{true};
-    uint32 LogLevel{1};
-    bool Debug{false};
-    bool Announce{true};
+struct LLMConfig
+{
+    struct Chat
+    {
+        bool Enable = true;
+        bool Announce = true;
+        bool LogBotDetection = true;  // Whether to log detailed bot detection info
+        uint32_t ResponseCooldown = 1;   // Cooldown between responses in seconds
+        float ChatRange = 30.0f;       // Range for proximity chat (SAY)
+        uint32_t MinMessageLength = 2;  // Minimum message length to process
+    };
 
-    std::string Endpoint;
-    std::string Model;
-    std::string ApiKey;
-    std::string ApiSecret;
-    float ChatRange{30.0f};
-    std::string ResponsePrefix;
-    uint32 MaxResponsesPerMessage{3};
-    uint32 ResponseChance{100};
+    struct API
+    {
+        std::string Endpoint = "http://localhost:11434/api/chat";
+        std::string Model = "mistral";
+        std::string APIKey = "";
+        uint32_t MaxTokens = 100;
+        float Temperature = 0.7f;
+    };
 
-    struct {
-        uint32 MessagesPerSecond{5};
-        uint32 WindowSize{10000};
-        uint32 MaxMessages{5};
-    } RateLimit;
+    struct Database
+    {
+        std::string CustomDB = "custom";
+        std::string CharacterDB = "characters";
+    };
 
-    struct {
-        struct {
-            uint32 MaxThreads{2};
-            uint32 MaxApiCalls{5};
-            uint32 ApiTimeout{3};
-        } Threading;
+    struct Logging
+    {
+        uint32_t LogLevel = 3;  // Set to maximum debug level
+        bool LogToConsole = true;
+        bool LogToFile = false;
+        std::string LogFile = "llm_chat.log";
+    };
 
-        struct {
-            uint32 WindowSize{10000};
-            uint32 MaxMessages{5};
-        } GlobalRateLimit;
-
-        struct {
-            uint32 Player{10000};
-            uint32 Bot{15000};
-            uint32 Global{5000};
-        } Cooldowns;
-
-        struct {
-            uint32 Min{5};
-            uint32 Max{200};
-        } MessageLimits;
-
-        struct {
-            uint32 Min{2000};
-            uint32 Max{1500};
-            uint32 Pacified{5000};
-        } Delays;
-    } Performance;
-
-    struct {
-        uint32 Size{25};
-        uint32 Timeout{180};
-    } Queue;
-
-    struct {
-        float Temperature{0.85f};
-        float TopP{0.9f};
-        uint32 NumPredict{2048};
-        uint32 ContextSize{4096};
-        float RepeatPenalty{1.2f};
-        uint32 MaxQueueSize{100};
-    } LLM;
-
-    struct {
-        bool Enable{true};
-        uint32 MaxInteractionsPerPair{10};
-        uint32 ExpirationTime{3600};
-        uint32 MaxContextLength{2000};
-    } Memory;
-
-    std::string Host;
-    std::string Port;
-    std::string Target;
-
-    struct {
-        std::string CharacterDB{"acore_characters"};
-        std::string WorldDB{"acore_world"};
-        std::string AuthDB{"acore_auth"};
-        std::string CustomDB{"acore_llm_chat"};
-    } Database;
-
-    std::string PersonalityFile{"modules/mod_llm_chat/conf/personalities.json"};
+    Chat Chat;
+    API API;
+    Database Database;
+    Logging Logging;
+    bool Enable = true;
 };
 
+// Global configuration instance
 extern LLMConfig LLM_Config;
 
-#endif // _MOD_LLM_CHAT_CONFIG_H_ 
+#endif // MOD_LLM_CHAT_CONFIG_H 

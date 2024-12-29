@@ -1,15 +1,16 @@
-#ifndef _MOD_LLM_CHAT_H_
-#define _MOD_LLM_CHAT_H_
+#ifndef MOD_LLM_CHAT_H
+#define MOD_LLM_CHAT_H
 
-#include "Define.h"
 #include "mod-llm-chat-config.h"
-#include <string>
+#include <atomic>
 
-// Function declarations
+// Global shutdown flag
+extern std::atomic<bool> g_moduleShutdown;
+
+// Module functions
 void LoadConfig();
-std::string QueryLLM(const std::string& message, const std::string& sender, const std::string& recipient);
-bool InitializeModule();
-void CleanupModule();
-void Addmod_llm_chatScripts();
+void StartModule();
+void StopModule();
+bool QueryLLM(std::string const& message, std::string& response);
 
-#endif // _MOD_LLM_CHAT_H_
+#endif // MOD_LLM_CHAT_H

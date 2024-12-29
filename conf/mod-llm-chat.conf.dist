@@ -1,28 +1,7 @@
 # LLM Chat Module Configuration
 
 ###################################################################################################
-# SECTION 1: Database Settings
-###################################################################################################
-
-#
-#    LLMChat.Database
-#        Description: Database names used by the module
-#        Default:     Standard AzerothCore database names
-#        Note:        Adjust these if your database names differ from the defaults
-#                    The Playerbots database is used to fetch additional bot-specific information
-#                    The LLMDB database stores persistent bot personalities, backstories,
-#                    conversation history, and other LLM-specific data to maintain consistent
-#                    character traits and behaviors across sessions
-#
-
-LLMChat.Database.Character = "acore_characters"
-LLMChat.Database.World = "acore_world"
-LLMChat.Database.Auth = "acore_auth"
-LLMChat.Database.Playerbots = "acore_playerbots"
-LLMChat.Database.LLMDB = "LLMDB"
-
-###################################################################################################
-# SECTION 2: Core Settings
+# SECTION 1: Core Settings
 ###################################################################################################
 
 #
@@ -56,7 +35,7 @@ LLMChat.LogLevel = 3
 LLMChat.Announce = 1
 
 ###################################################################################################
-# SECTION 3: LLM Provider Settings
+# SECTION 2: LLM Provider Settings
 ###################################################################################################
 
 #
@@ -68,7 +47,7 @@ LLMChat.Announce = 1
 #        Available Endpoints (commented examples):
 #
 #        Local Deployments (Free):
-#            - "http://localhost:11434/api/generate"    (Ollama - Default)
+#            - "http://localhost:11434/api/chat"    (Ollama - Default)
 #                Website: https://ollama.ai
 #                Note: Free, self-hosted, runs locally
 #
@@ -218,7 +197,7 @@ LLMChat.ApiKey = ""
 LLMChat.ApiSecret = ""
 
 ###################################################################################################
-# SECTION 4: Chat Behavior Settings
+# SECTION 3: Chat Behavior Settings
 ###################################################################################################
 
 #
@@ -245,143 +224,67 @@ LLMChat.ResponsePrefix = ""
 
 LLMChat.MaxResponsesPerMessage = 3
 
-#
-#    LLMChat.ResponseChance
-#        Description: Percentage chance of generating a response (0-100)
-#        Default:     100
-#
-
-LLMChat.ResponseChance = 100
-
 ###################################################################################################
-# SECTION 5: Performance & Rate Limiting
+# SECTION 4: Queue Settings
 ###################################################################################################
 
 #
-#    LLMChat.Performance.GlobalRateLimit
-#        Description: Global rate limiting settings
-#        WindowSize:  Time window in milliseconds (Default: 10000 - 10 seconds)
-#        MaxMessages: Maximum messages per window (Default: 5)
+#    LLMChat.Queue.MaxResponses
+#        Description: Maximum number of responses to queue per interaction
+#        Default:     3
 #
 
-LLMChat.Performance.GlobalRateLimit.WindowSize = 10000
-LLMChat.Performance.GlobalRateLimit.MaxMessages = 5
+LLMChat.Queue.MaxResponses = 3
 
 #
-#    LLMChat.Performance.Cooldowns
-#        Description: Cooldown settings
-#        Player:      Time between player triggers (Default: 10000ms - 10 seconds)
-#        Bot:         Time before a bot can respond again (Default: 15000ms - 15 seconds)
-#        Global:      Time before any bot can respond (Default: 5000ms - 5 seconds)
+#    LLMChat.Queue.GlobalCooldown
+#        Description: Global cooldown between responses in milliseconds
+#        Default:     1000
 #
 
-LLMChat.Performance.PlayerCooldown = 10000
-LLMChat.Performance.BotCooldown = 15000
-LLMChat.Performance.GlobalCooldown = 5000
+LLMChat.Queue.GlobalCooldown = 1000
 
 #
-#    LLMChat.Performance.Threading
-#        Description: Thread and API call limits
-#        MaxThreads:  Maximum concurrent threads (Default: 2)
-#        MaxApiCalls: Maximum active API calls (Default: 5)
-#        ApiTimeout:  API timeout in seconds (Default: 3)
+#    LLMChat.Queue.BotCooldown
+#        Description: Per-bot cooldown between responses in milliseconds
+#        Default:     5000
 #
 
-LLMChat.Performance.MaxConcurrentThreads = 2
-LLMChat.Performance.MaxActiveApiCalls = 5
-LLMChat.Performance.ApiTimeout = 3
-
-#
-#    LLMChat.Performance.MessageLimits
-#        Description: Message length limits
-#        Min:         Minimum characters (Default: 5)
-#        Max:         Maximum characters (Default: 200)
-#
-
-LLMChat.Performance.MinMessageLength = 5
-LLMChat.Performance.MaxMessageLength = 200
-
-#
-#    LLMChat.Performance.Delays
-#        Description: Response timing settings
-#        Min:         Minimum delay in ms (Default: 2000 - 2 seconds)
-#        Max:         Additional random delay in ms (Default: 1500 - Up to 1.5 seconds)
-#        Pacified:    Duration to keep bots pacified after response (Default: 5000ms)
-#
-
-LLMChat.Performance.ResponseDelay.Min = 2000
-LLMChat.Performance.ResponseDelay.Max = 1500
-LLMChat.Performance.BotPacifiedDuration = 5000
+LLMChat.Queue.BotCooldown = 5000
 
 ###################################################################################################
-# SECTION 6: Queue Settings
+# SECTION 5: Combat Settings
 ###################################################################################################
 
 #
-#    LLMChat.Queue
-#        Description: Message queue settings
-#        Size:        Maximum queue size (Default: 25)
-#        Timeout:     Time before discarding queued message (Default: 180 seconds)
+#    LLMChat.Combat.Enable
+#        Description: Enable or disable combat-related chat responses
+#        Default:     0
 #
 
-LLMChat.Queue.Size = 25
-LLMChat.Queue.Timeout = 180
-
-###################################################################################################
-# SECTION 7: LLM Parameters
-###################################################################################################
+LLMChat.Combat.Enable = 0
 
 #
-#    LLMChat.LLM.Parameters
-#        Description: Language model behavior settings
-#        Temperature:    Creativity (0.0-1.0, Default: 0.85)
-#        TopP:          Nucleus sampling (0.0-1.0, Default: 0.9)
-#        NumPredict:    Max tokens to generate (Default: 2048)
-#        ContextSize:   Context window size (Default: 4096)
-#        RepeatPenalty: Repetition penalty (1.0+, Default: 1.2)
-#
-
-LLMChat.LLM.Temperature = 0.85
-LLMChat.LLM.TopP = 0.9
-LLMChat.LLM.NumPredict = 2048
-LLMChat.LLM.ContextSize = 4096
-LLMChat.LLM.RepeatPenalty = 1.2
-
-###################################################################################################
-# SECTION 8: Memory System
-###################################################################################################
-
-#
-#    LLMChat.Memory
-#        Description: Conversation memory settings
-#        Enable:      Enable memory system (Default: 1)
-#        MaxPair:     Max interactions per pair (Default: 10)
-#        Expiration:  Memory expiration in seconds (Default: 3600 - 1 hour, 0 = never)
-#        Context:     Max context length in characters (Default: 2000)
-#
-
-LLMChat.Memory.Enable = 1
-LLMChat.Memory.MaxInteractionsPerPair = 10
-LLMChat.Memory.ExpirationTime = 3600
-LLMChat.Memory.MaxContextLength = 2000
-
-###################################################################################################
-# SECTION 9: Personality System
-###################################################################################################
-
-#
-#    LLMChat.PersonalityFile
-#        Description: Path to the personality configuration file
-#        Default:     "modules/mod_llm_chat/conf/personalities.json"
-#
-
-LLMChat.PersonalityFile = "modules/mod_llm_chat/conf/personalities.json"
-
-#
-#    LLMChat.RateLimit.MessagesPerSecond
-#        Description: Maximum messages per second allowed
+#    LLMChat.Combat.MaxPlayers
+#        Description: Maximum number of players in combat for responses
 #        Default:     5
 #
 
-LLMChat.RateLimit.MessagesPerSecond = 5
+LLMChat.Combat.MaxPlayers = 5
+
+#
+#    LLMChat.Combat.MinPlayers
+#        Description: Minimum number of players in combat for responses
+#        Default:     1
+#
+
+LLMChat.Combat.MinPlayers = 1
+
+#
+#    LLMChat.Combat.RequireTargetInCombat
+#        Description: Whether the target must be in combat for responses
+#        Default:     1
+#
+
+LLMChat.Combat.RequireTargetInCombat = 1
 

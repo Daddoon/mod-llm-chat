@@ -1,59 +1,69 @@
 #include "LLMChatLogger.h"
 #include "Log.h"
+#include "mod-llm-chat-config.h"
 
-void LLMChatLogger::Log(uint32 level, std::string const& message) {
-    if (LLM_Config.LogLevel >= level) {
-        switch (level) {
-            case 1:
-                LOG_FATAL("module.llm_chat", "{}", message);
-                break;
-            case 2:
-                LOG_ERROR("module.llm_chat", "{}", message);
-                break;
-            case 3:
-                LOG_WARN("module.llm_chat", "{}", message);
-                break;
-            case 4:
-                LOG_INFO("module.llm_chat", "{}", message);
-                break;
-            case 5:
-                LOG_DEBUG("module.llm_chat", "{}", message);
-                break;
-            case 6:
-                LOG_TRACE("module.llm_chat", "{}", message);
-                break;
-            default:
-                LOG_INFO("module.llm_chat", "{}", message);
-                break;
+void LLMChatLogger::Log(uint32_t level, std::string const& message) {
+    if (!LLM_Config.Enable)
+        return;
+
+    if (LLM_Config.Logging.LogLevel >= level)
+    {
+        if (LLM_Config.Logging.LogToConsole)
+            LOG_INFO("module", "[LLMChat] {}", message);
+
+        if (LLM_Config.Logging.LogToFile)
+        {
+            // TODO: Implement file logging
         }
     }
 }
 
 void LLMChatLogger::LogChat(std::string const& playerName, std::string const& input, std::string const& response) {
-    // Skip logging if disabled (level 0)
-    if (LLM_Config.LogLevel == 0) {
+    if (!LLM_Config.Enable)
         return;
-    }
     
     // Only log chat at detailed level or higher
-    if (LLM_Config.LogLevel >= 2) {
-        std::string inputMsg = "Player " + playerName + " says: " + input;
-        std::string responseMsg = "AI Response: " + response;
-        LOG_INFO("module.llm_chat", "{}", inputMsg);
-        LOG_INFO("module.llm_chat", "{}", responseMsg);
+    if (LLM_Config.Logging.LogLevel >= 2)
+    {
+        if (LLM_Config.Logging.LogToConsole)
+        {
+            std::string inputMsg = "Player " + playerName + " says: " + input;
+            std::string responseMsg = "AI Response: " + response;
+            LOG_INFO("module", "[LLMChat] {}", inputMsg);
+            LOG_INFO("module", "[LLMChat] {}", responseMsg);
+        }
+
+        if (LLM_Config.Logging.LogToFile)
+        {
+            // TODO: Implement file logging
+        }
     }
 }
 
 void LLMChatLogger::LogError(std::string const& message) {
-    // Always log errors unless logging is completely disabled
-    if (LLM_Config.LogLevel > 0) {
-        LOG_ERROR("module.llm_chat", "{}", message);
+    if (!LLM_Config.Enable)
+        return;
+
+    LOG_ERROR("module", "[LLMChat] {}", message);
+
+    if (LLM_Config.Logging.LogToFile)
+    {
+        // TODO: Implement file logging
     }
 }
 
 void LLMChatLogger::LogDebug(std::string const& message) {
-    // Only log debug messages at highest level
-    if (LLM_Config.LogLevel >= 3) {
-        LOG_DEBUG("module.llm_chat", "{}", message);
+    if (!LLM_Config.Enable)
+        return;
+
+    if (LLM_Config.Logging.LogLevel >= 2)
+    {
+        if (LLM_Config.Logging.LogToConsole)
+            LOG_DEBUG("module", "[LLMChat] {}", message);
+
+        if (LLM_Config.Logging.LogToFile)
+        {
+            // TODO: Implement file logging
+        }
     }
 } 

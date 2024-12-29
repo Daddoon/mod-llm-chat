@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# CURL is required for this module
-CURL_PACKAGE_NAME="libcurl4-openssl-dev"
+# Boost is required for this module
+BOOST_PACKAGE_NAME="libboost-all-dev"
 
 if [[ $OSTYPE == "darwin"* ]]; then
-    CURL_PACKAGE_NAME="curl"
+    BOOST_PACKAGE_NAME="boost"
 fi
 
 source "$AC_PATH_CONF/conf.sh.dist"
@@ -18,5 +18,5 @@ mod-llm-chat = mod-llm-chat
 "
 
 AC_ADD_BUILD_DEPS="$AC_ADD_BUILD_DEPS
-$CURL_PACKAGE_NAME
+$BOOST_PACKAGE_NAME
 " 
