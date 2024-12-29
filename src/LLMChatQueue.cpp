@@ -269,11 +269,38 @@ void LLMChatQueue::QueryLLM(std::string const& message, Player* responder, Playe
         LOG_INFO("module", "[LLMChat] - Location: {}", responderDetails.location);
 
         // Format prompt
-        std::string prompt = fmt::format("Character: {} - {} {}\nLocation: {}\n\nMessage: {}\n\nRespond in character.",
+        std::string prompt = fmt::format(
+            "You are a WoW player controlling {} - a level {} {} {} of the {} faction. You're currently in {}. "
+            "{}{}" // Guild info if any
+            "{}{}" // Combat status and health if in combat
+            "{}" // Target info if any
+            "\nYou're responding to {} - a level {} {} {} of the {} faction. "
+            "{}" // Their guild info if any
+            "\nRespond to this message matching its tone and attitude - if they're friendly, be friendly back. "
+            "If they're rude or hostile, you can be snarky, defensive, or even toxic back. If they're joking, joke back. "
+            "Show faction pride when appropriate - defend your faction if they insult it, mock the opposite faction if they deserve it. "
+            "Consider level differences in your response - be more respectful to higher levels, maybe cocky to lower levels. "
+            "Don't hold back or filter your responses - be authentic to how real WoW players would actually respond. "
+            "Keep responses short and natural. Here's the message: {}\n\n"
+            "Important: Match the tone and intensity of the message you received. Write exactly like a real player would - "
+            "be raw and unfiltered, using common WoW chat style and slang. Don't worry about being polite or politically correct. "
+            "Remember your faction loyalty - Alliance vs Horde rivalry is a core part of WoW culture. "
+            "You can mix in light roleplay elements if it fits, but focus on sounding like a real player in their natural habitat.",
             responderDetails.name,
+            responderDetails.level,
             responderDetails.raceName,
             responderDetails.className,
+            responderDetails.faction,
             responderDetails.location,
+            !responderDetails.guildName.empty() ? fmt::format("\nMember of <{}>", responderDetails.guildName) : "",
+            responderDetails.isInCombat ? fmt::format("\nCurrently in combat ({}% health)", responderDetails.healthPct) : "",
+            !responderDetails.targetName.empty() ? fmt::format("\nTargeting: {}", responderDetails.targetName) : "",
+            senderDetails.name,
+            senderDetails.level,
+            senderDetails.raceName,
+            senderDetails.className,
+            senderDetails.faction,
+            !senderDetails.guildName.empty() ? fmt::format("\nMember of <{}>", senderDetails.guildName) : "",
             message);
 
         LOG_INFO("module", "[LLMChat] Generated prompt:\n{}", prompt);
