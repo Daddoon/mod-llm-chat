@@ -1,1 +1,43 @@
-/modules/mod-playerbots/
+# Ignore everything in parent directory
+/../../*
+!/../../modules/
+/../../modules/*
+!/../../modules/mod_llm_chat/
+
+# Build files
+build/
+_build/
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE files
+.vs/
+.vscode/
+*.swp
+*.swo
+.idea/
+*.iml
+*.user
+*.suo
+*.sdf
+*.opensdf
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Module specific
+conf/*
+!conf/*.dist
