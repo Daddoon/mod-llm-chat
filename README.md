@@ -37,7 +37,7 @@ Choose one:
 
 ## Installation
 
-### 1. Install System Dependencies (Ubuntu/Debian/Windows)
+### 1. Installation (AzerothCore + mod-llm-chat) - Ubuntu/Debian/Windows
 
 1.1 See AzerothCore [Requirement](https://www.azerothcore.org/wiki/requirements) manual
 1.2 See AzerothCore [Installation](https://www.azerothcore.org/wiki/core-installation) manual but **INSTEAD** clone from liyunfan1223 repository for Playerbots support, has **mod-llm-chat** is based on Playerbots.
