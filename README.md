@@ -7,7 +7,7 @@ This module enables AI chat interactions in World of Warcraft using either Ollam
 
 ## Pre-built Binaries
 
-- See in Release section !
+- See in [Release section](https://github.com/Daddoon/mod-llm-chat/releases) !
 - This is just given for convenience and only for Windows (x64).
 - Check the **mod-llm-chat.conf** file in accordance to your **ollama configuration**
 - AC Data files of your WOTLK client must be placed in a **data** dir at the root of your server binary (for this release)
