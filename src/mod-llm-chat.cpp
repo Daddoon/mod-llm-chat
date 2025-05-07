@@ -11,6 +11,7 @@
 #include "Log.h"
 #include "ScriptMgr.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 // Define the global configuration instance
 LLMConfig LLM_Config;
@@ -36,7 +37,7 @@ public:
         if (LLM_Config.Chat.Announce)
         {
             LOG_INFO("module", "[LLMChat] Module started successfully");
-            sWorld->SendServerMessage(SERVER_MSG_STRING, "LLM Chat module loaded");
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, "LLM Chat module loaded");
         }
     }
 
@@ -65,12 +66,12 @@ public:
         chatEvents = nullptr;
     }
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
     {
         if (!LLM_Config.Enable || !chatEvents)
             return;
 
-        chatEvents->OnChat(player, type, lang, msg);
+        chatEvents->OnPlayerChat(player, type, lang, msg);
     }
 };
 

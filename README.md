@@ -1,16 +1,28 @@
 # LLM Chat Module for AzerothCore
 ## Notice: This is a fork of Jake Aquilina [mod-llm-chat](https://gitlab.realsoftgames.com/krazor/mod_llm_chat)
-### This fork allow mod-llm-chat to compile with the AzerothCore version of mod-playerbots only
-
+### - This fork allow mod-llm-chat to compile with the AzerothCore version of mod-playerbots only
+### - The purpose of this fork is purely for experimentation and is not intented to be maintained
 
 This module enables AI chat interactions in World of Warcraft using either Ollama or LM Studio as the LLM provider.
 
+## Pre-built Binaries
+
+- See in Release section !
+- This is just given for convenience and only for Windows (x64).
+- Check the **mod-llm-chat.conf** file in accordance to your **ollama configuration**
+- AC Data files of your WOTLK client must be placed in a **data** dir at the root of your server binary (for this release)
+	- English: [AC Data (en-US)](https://github.com/wowgaming/client-data/releases)
+	- French:  [AC Data (fr-FR)](https://github.com/Daddoon/ac-client-data-fr/releases)
+	- Other localizations: You should extract theses data by yourself. Read AzerothCore manual
+
 ## Requirements
+
+- Current code has been tested against liyunfan1223 AzerothCore Server from this [commit](https://github.com/liyunfan1223/azerothcore-wotlk/tree/ce9343d9167acb27fbfc8ef1203f0077034d07de)
 
 ### System Requirements
 
 - AzerothCore v5.0.0+
-- Boost development libraries (libboost-all-dev)
+- AzerothCore [build requirements](https://www.azerothcore.org/wiki/requirements)
 - nlohmann-json library (version 3.2.0 or higher)
 - Ollama or LM Studio installed locally
 - CMake 3.5+ (included with AzerothCore)
@@ -24,36 +36,70 @@ Choose one:
 
 ## Installation
 
-### 1. Install System Dependencies (Ubuntu/Debian)
+### 1. Install System Dependencies (Ubuntu/Debian/Windows)
 
-Update package list:
-
-```bash
-sudo apt update
-```
-
-Install required development libraries:
+1.1 See AzerothCore [Requirement](https://www.azerothcore.org/wiki/requirements) manual
+1.2 See AzerothCore [Installation](https://www.azerothcore.org/wiki/core-installation) manual but **INSTEAD** clone from liyunfan1223 repository for Playerbots support, has **mod-llm-chat** is based on Playerbots.
 
 ```bash
-sudo apt install -y \
-    libboost-all-dev \
-    nlohmann-json3-dev \
-    build-essential \
-    cmake \
-    git
+git clone https://github.com/liyunfan1223/azerothcore-wotlk.git --branch=Playerbot
 ```
+
+**(OPTIONAL)** If you are having issue afterward, on the last AzerothCore version from Playerbot, you may test on this commit, from your base project directory:
+
+```bash
+git reset --hard ce9343d
+```
+
+Then:
+
+```bash
+cd azerothcore-wotlk/modules
+git clone https://github.com/liyunfan1223/mod-playerbots.git --branch=master
+git clone https://github.com/Daddoon/mod-llm-chat.git --branch=main
+```
+
+1.3 Install nlohmann-json library (version 3.2.0 or higher)
+	- On Ubuntu/Debian
+	```bash
+	sudo apt install -y nlohmann-json3-dev
+	```
+	- On Windows
+		0. Go through the steps from **AzerothCore - Windows Core** installation manual but stop after the first step of the **Compiling the Source** section
+		0. Open your Visual Studio **AzerothCore.sln** project you should have generated from **CMake** from **AzerothCore Installation manual**
+		1. Right click on the **modules** project in your **Solution Explorer**
+		2. Click Manage NuGet Package
+		3. Search for **nlohmann.json**
+		4. Click Install
+
+1.4 Continue installation all AzerothCore installation steps needed from the official manual
+
 
 ## Install the tables for the character database
 
 The tables are required for storing long term conversation memory with playerbots and characters as well as setting up initial character traits and responses.
 
+(Unsure if automatic or not)
 Navigate to the sql directory:
 
 ```bash
-cd azerothcore-wotlk/modules/mod_llm_chat/data/sql/db-characters/base
+cd azerothcore-wotlk/modules/mod_llm_chat/data/sql
 ```
 
-Install the tables with command:
+Install the tables with command, or copy past with your favorite SQL tool in your DB:
+
+```sql
+source db_llm_chat.sql
+```
+
+Navigate to the sql directory:
+
+```bash
+db-characters/base
+```
+
+(TODO: Need to test if this is required on the llmdb OR acore database, as USE is not specified)
+Install the tables with command, or copy past with your favorite SQL tool in your DB:
 
 ```sql
 source character_rp_profiles.sql
@@ -117,8 +163,8 @@ To switch between models, update your `mod-llm-chat.conf` file:
 
 ## Support
 
-- Report issues on GitHub
-- Join AzerothCore Discord for help
+- Do not expect deep support from me as I have serious chronical disease. This is just for fun and some support.
+- But feel free to propose PR here or on the original repository of Jake Aquilina [mod-llm-chat](https://gitlab.realsoftgames.com/krazor/mod_llm_chat) based on GitLab.
 
 ## License
 

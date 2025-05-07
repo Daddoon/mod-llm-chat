@@ -18,7 +18,7 @@ LLMChatEvents::LLMChatEvents() noexcept : PlayerScript("LLMChatEvents")
     LOG_INFO("module", "[LLMChat] LLMChatEvents initialized");
 }
 
-void LLMChatEvents::OnChat(Player* player, uint32 /*type*/, uint32 /*lang*/, std::string& msg)
+void LLMChatEvents::OnPlayerChat(Player* player, uint32 /*type*/, uint32 /*lang*/, std::string& msg)
 {
     if (!player || msg.empty())
         return;
@@ -80,7 +80,7 @@ void LLMChatEvents::OnChat(Player* player, uint32 /*type*/, uint32 /*lang*/, std
     return;
 }
 
-void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Player* receiver)
+void LLMChatEvents::OnPlayerChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Player* receiver)
 {
     LOG_INFO("module", "[LLMChat] ====== BEGIN CHAT PROCESSING ======");
     LOG_INFO("module", "[LLMChat] OnChat (Whisper) triggered - Player: {}, Type: {} ({}), Message: {}", 
@@ -391,7 +391,7 @@ std::vector<Player*> LLMChatEvents::GetPotentialResponders(Player* sender, uint3
     return responders;
 }
 
-void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Channel* channel)
+void LLMChatEvents::OnPlayerChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Channel* channel)
 {
     LOG_INFO("module", "[LLMChat] OnChat (Channel) received - Type: {} ({}) Channel: {} Message: {}", 
         GetChatTypeName(type), type, channel ? channel->GetName() : "null", msg);
@@ -437,7 +437,7 @@ void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::st
     }
 }
 
-void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Group* /*group*/)
+void LLMChatEvents::OnPlayerChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Group* /*group*/)
 {
     LOG_INFO("module", "[LLMChat] OnChat (Group) received - Type: {} Message: {}", type, msg);
     
@@ -481,7 +481,7 @@ void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::st
     }
 }
 
-void LLMChatEvents::OnChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Guild* /*guild*/)
+void LLMChatEvents::OnPlayerChat(Player* player, uint32 type, uint32 /*lang*/, std::string& msg, Guild* /*guild*/)
 {
     LOG_INFO("module", "[LLMChat] OnChat (Guild) received - Type: {} Message: {}", type, msg);
     

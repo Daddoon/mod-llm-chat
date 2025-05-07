@@ -45,11 +45,11 @@ class LLMChatEvents : public PlayerScript
 public:
     LLMChatEvents() noexcept;
 
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override;
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Player* receiver) override;
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Group* /*group*/) override;
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* /*guild*/) override;
-    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel) override;
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg) override;
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Player* receiver) override;
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Group* /*group*/) override;
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* /*guild*/) override;
+    void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel) override;
 
     static void SendResponse(Player* responder, Player* sender, std::string const& response, uint32 chatType);
     static bool ShouldProcessMessage(Player* player, uint32 type, const std::string& msg);
