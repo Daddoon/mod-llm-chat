@@ -1,4 +1,7 @@
 # LLM Chat Module for AzerothCore
+## Notice: This is a fork of Jake Aquilina [mod-llm-chat](https://gitlab.realsoftgames.com/krazor/mod_llm_chat)
+### This fork allow mod-llm-chat to compile with the AzerothCore version of mod-playerbots only
+
 
 This module enables AI chat interactions in World of Warcraft using either Ollama or LM Studio as the LLM provider.
 
