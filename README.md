@@ -63,9 +63,9 @@ git clone https://github.com/Daddoon/mod-llm-chat.git --branch=main
 - 1.3 Install nlohmann-json library (version 3.2.0 or higher)
 - 1.3.1 On Ubuntu/Debian
 
-      ```bash
+  ```bash
       sudo apt install -y nlohmann-json3-dev
-      ```
+   ```
 - 1.3.2 On Windows
   1. Go through the steps from **AzerothCore - Windows Core** installation manual but stop after the first step of the **Compiling the Source** section
   2. Open your Visual Studio **AzerothCore.sln** project you should have generated from **CMake** from **AzerothCore Installation manual*
