@@ -14,6 +14,7 @@ This module enables AI chat interactions in World of Warcraft using either Ollam
 	- English: [AC Data (en-US)](https://github.com/wowgaming/client-data/releases)
 	- French:  [AC Data (fr-FR)](https://github.com/Daddoon/ac-client-data-fr/releases)
 	- Other localizations: You should extract theses data by yourself. Read AzerothCore manual
+ - Obviously, MySQL requirements and else should also be met before starting your server, like in the AzerothCore installation manual
 
 ## Requirements
 
